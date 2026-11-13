@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Sun, Moon, Volume2, VolumeX, ZoomIn, ZoomOut, RotateCcw, FastForward } from 'lucide-react';
+import { Sun, Moon, Volume2, VolumeX, RotateCcw, FastForward, Maximize, Minimize } from 'lucide-react';
 import { OFFICE_ZONES, AGENT_DESKS } from '../data/office2dLayout';
 import { officeAudio } from '../utils/officeAudio';
 import folkSpriteSheetUrl from '../assets/32x32folk.png';
@@ -54,6 +54,15 @@ export default function Office2DCanvas({
   const [isNightMode, setIsNightMode] = useState(parentIsNightMode ?? false);
   const [isMuted, setIsMuted] = useState(false);
   const [speed, setSpeed] = useState(simulationSpeed);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
 
   // Preload Cartoon Folk Spritesheet
   useEffect(() => {
@@ -388,6 +397,19 @@ export default function Office2DCanvas({
     officeAudio.playDing();
   }, []);
 
+  const handleToggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+    officeAudio.playDing();
+  }, []);
+
   return (
     <div className="office-2d-wrapper" style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
       <canvas
@@ -494,6 +516,24 @@ export default function Office2DCanvas({
           title="Reset Camera View to Auto-Fit"
         >
           <RotateCcw style={{ width: '14px', height: '14px' }} />
+        </button>
+
+        <div style={{ width: '1px', height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.15)' }} />
+
+        <button
+          onClick={handleToggleFullscreen}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: isFullscreen ? '#38bdf8' : '#cbd5e1',
+            cursor: 'pointer',
+            padding: '4px',
+            display: 'flex',
+            alignItems: 'center'
+          }}
+          title={isFullscreen ? 'Exit Fullscreen' : 'Enter Native Fullscreen'}
+        >
+          {isFullscreen ? <Minimize style={{ width: '14px', height: '14px' }} /> : <Maximize style={{ width: '14px', height: '14px' }} />}
         </button>
       </div>
     </div>
