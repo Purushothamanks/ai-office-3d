@@ -59,6 +59,11 @@ export default function AgentCardOverlay({ agent, onClose, onUpdateAgentTask }) 
               <span className="agent-handle">{agent.handle}</span>
               <span className="agent-dept-tag">{agent.department}</span>
             </div>
+            {agent.systemName && (
+              <div style={{ fontSize: '0.7rem', color: agent.color, fontWeight: '700', marginTop: '3px' }}>
+                ⚡ Powered by {agent.systemName}
+              </div>
+            )}
           </div>
         </div>
         <button onClick={onClose} className="agent-overlay-close-btn" title="Close inspector">
