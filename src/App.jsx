@@ -1,13 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Office2DCanvas from './components/Office2DCanvas';
 import Office3DCanvas from './components/Office3DCanvas';
-import TopHUD from './components/TopHUD';
-import OfficeControls from './components/OfficeControls';
 import AgentCardOverlay from './components/AgentCardOverlay';
-import RealtimeActivityFeed from './components/RealtimeActivityFeed';
 import AllHandsModal from './components/AllHandsModal';
-import OfficeRadar from './components/OfficeRadar';
-import WalkControlsOverlay from './components/WalkControlsOverlay';
 import { INITIAL_AGENTS, OFFICE_AREAS } from './data/agentsData';
 import { officeAudio } from './utils/officeAudio';
 
@@ -16,12 +11,12 @@ export default function App() {
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [currentArea, setCurrentArea] = useState(null);
   const [isAllHands, setIsAllHands] = useState(false);
-  const [isNightMode, setIsNightMode] = useState(true);
+  const [isNightMode, setIsNightMode] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [simulationSpeed, setSimulationSpeed] = useState(1);
 
-  // View Mode: '2d' (Top View Office with Autonomous Walking Agents) or '3d' (Walking Room Studio)
-  const [viewMode, setViewMode] = useState('2d'); // Default to 2D Top View as requested!
+  // View Mode: 2D Top View Office (Clean, Fullscreen)
+  const [viewMode, setViewMode] = useState('2d');
   const [navigationMode, setNavigationMode] = useState('walk');
   const [nearbyAgent, setNearbyAgent] = useState(null);
   const [walkDirectionInput, setWalkDirectionInput] = useState(null);
@@ -248,63 +243,7 @@ export default function App() {
         />
       )}
 
-      {/* Top HUD Bar */}
-      <TopHUD
-        activeAgentsCount={agents.length}
-        isNightMode={isNightMode}
-        setIsNightMode={setIsNightMode}
-        isAllHands={isAllHands}
-        setIsAllHands={setIsAllHands}
-        isMuted={isMuted}
-        setIsMuted={setIsMuted}
-        simulationSpeed={simulationSpeed}
-        setSimulationSpeed={setSimulationSpeed}
-        navigationMode={navigationMode}
-        setNavigationMode={setNavigationMode}
-        viewMode={viewMode}
-        setViewMode={setViewMode}
-      />
-
-      {/* Walking Style Controls Overlay (Active in 3D Walk Mode) */}
-      {viewMode === '3d' && (
-        <WalkControlsOverlay
-          navigationMode={navigationMode}
-          nearbyAgent={nearbyAgent}
-          onInteractAgent={handleSelectAgent}
-          setWalkDirectionInput={setWalkDirectionInput}
-        />
-      )}
-
-      {/* All-Hands Meeting Top Banner */}
-      <AllHandsModal
-        isAllHands={isAllHands}
-        onClose={() => setIsAllHands(false)}
-      />
-
-      {/* Interactive Studio Radar (Active in 3D Mode) */}
-      {viewMode === '3d' && (
-        <OfficeRadar
-          agents={agents}
-          selectedAgent={selectedAgent}
-          onSelectAgent={handleSelectAgent}
-        />
-      )}
-
-      {/* Bottom Camera Navigation Presets (Active in 3D Mode) */}
-      {viewMode === '3d' && (
-        <OfficeControls
-          currentArea={currentArea}
-          onSelectArea={handleSelectArea}
-        />
-      )}
-
-      {/* Realtime Activity Feed (Bottom-Right Ticker) */}
-      <RealtimeActivityFeed
-        activities={activities}
-        onSelectAgentById={handleSelectAgentById}
-      />
-
-      {/* Slide-Over Workstation Inspector Card */}
+      {/* Slide-Over Workstation Inspector Card (Active on click) */}
       {selectedAgent && (
         <AgentCardOverlay
           agent={agents.find((a) => a.id === selectedAgent.id) || selectedAgent}
