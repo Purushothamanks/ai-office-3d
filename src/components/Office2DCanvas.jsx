@@ -1,6 +1,30 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { OFFICE_ZONES, AGENT_DESKS } from '../data/office2dLayout';
 import { officeAudio } from '../utils/officeAudio';
+import folkSpriteSheetUrl from '../assets/32x32folk.png';
+
+/**
+ * Cartoon Character Spritesheet Definition (384 x 256 Atlas from ai-town)
+ * 8 distinct folk characters (f1-f8) in 32x32 pixel art.
+ * Each character has 4 directional rows (down, left, right, up)
+ * and 3 walk frames (walk1, stand, walk2).
+ */
+const AGENT_SPRITES = {
+  gemini: { index: 0, name: 'Gemini 3.8', icon: '⚡', role: 'Multimodal Orchestrator' },
+  claude: { index: 1, name: 'Claude 3.7', icon: '🏛️', role: 'Principal Architect' },
+  deepseek: { index: 2, name: 'DeepSeek-R1', icon: '🧠', role: 'CoT Reasoning Engine' },
+  ollama: { index: 3, name: 'Ollama Fleet', icon: '🖥️', role: 'On-Device GPU Core' },
+  vision: { index: 4, name: 'Vision Sentinel', icon: '👁️', role: 'Visual Perception' },
+  diffusion: { index: 5, name: 'Canvas Diffusion', icon: '🎨', role: 'Shader & Generative Art' },
+  sentinel: { index: 6, name: 'Sentinel Ops', icon: '🛡️', role: 'Cyber-Defense Guard' }
+};
+
+const DIR_ROW_OFFSETS = {
+  down: 0,
+  left: 32,
+  right: 64,
+  up: 96
+};
 
 export default function Office2DCanvas({
   agents,
@@ -11,6 +35,27 @@ export default function Office2DCanvas({
   isNightMode
 }) {
   const canvasRef = useRef(null);
+  const spriteImgRef = useRef(null);
+  const [spriteLoaded, setSpriteLoaded] = useState(false);
+
+  // Preload Cartoon Folk Spritesheet
+  useEffect(() => {
+    const img = new Image();
+    img.src = folkSpriteSheetUrl || '/assets/32x32folk.png';
+    img.onload = () => {
+      spriteImgRef.current = img;
+      setSpriteLoaded(true);
+    };
+    img.onerror = () => {
+      // Fallback to public asset path if bundler path differs
+      const fallbackImg = new Image();
+      fallbackImg.src = '/assets/32x32folk.png';
+      fallbackImg.onload = () => {
+        spriteImgRef.current = fallbackImg;
+        setSpriteLoaded(true);
+      };
+    };
+  }, []);
 
   // Autonomous walking agents simulation state
   const simRef = useRef({
@@ -19,7 +64,9 @@ export default function Office2DCanvas({
     animId: null,
     time: 0,
     speedRef: 1,
-    isAllHandsRef: false
+    isAllHandsRef: false,
+    dustParticles: [],
+    steamParticles: []
   });
 
   useEffect(() => {
@@ -36,23 +83,31 @@ export default function Office2DCanvas({
     agents.forEach((agent, index) => {
       const desk = AGENT_DESKS[agent.id] || { x: 200, y: 200, faceAngle: 0 };
       if (!s.agentsState.has(agent.id)) {
+        // Initial facing based on desk angle
+        let initialDir = 'down';
+        if (desk.faceAngle === 0) initialDir = 'right';
+        else if (desk.faceAngle === Math.PI) initialDir = 'left';
+        else if (desk.faceAngle === -Math.PI / 2) initialDir = 'up';
+
         s.agentsState.set(agent.id, {
           id: agent.id,
           agent,
+          charIndex: AGENT_SPRITES[agent.id]?.index ?? (index % 8),
           x: desk.x,
-          y: desk.y,
+          y: desk.y + 6,
           targetX: desk.x,
-          targetY: desk.y,
+          targetY: desk.y + 6,
           deskX: desk.x,
-          deskY: desk.y,
+          deskY: desk.y + 6,
           seatX: OFFICE_ZONES.waypoints.boardroomSeats[index % 7].x,
           seatY: OFFICE_ZONES.waypoints.boardroomSeats[index % 7].y,
           state: 'AT_DESK',
-          faceAngle: desk.faceAngle,
+          dir: initialDir,
           walkStep: 0,
-          speed: 1.8,
-          timer: Math.random() * 8 + 4, // time until next routine action
-          currentThought: agent.currentStatus
+          speed: 1.85,
+          timer: Math.random() * 8 + 4,
+          currentThought: agent.currentStatus,
+          lastDustTime: 0
         });
       }
     });
@@ -82,7 +137,7 @@ export default function Office2DCanvas({
       s.animId = requestAnimationFrame(animate);
 
       const now = performance.now();
-      const delta = (now - lastTime) * 0.001 * s.speedRef;
+      const delta = Math.min((now - lastTime) * 0.001 * s.speedRef, 0.1);
       lastTime = now;
       s.time += delta;
 
@@ -113,7 +168,7 @@ export default function Office2DCanvas({
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
       }
 
-      // ROOM 1: Central Boardroom (Center glass conference zone)
+      // ROOM 1: Central Boardroom (Glass conference zone)
       const b = OFFICE_ZONES.boardroom;
       ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
       ctx.fillRect(b.x * scaleX, b.y * scaleY, b.w * scaleX, b.h * scaleY);
@@ -126,24 +181,25 @@ export default function Office2DCanvas({
       // Boardroom Door Opening
       ctx.clearRect((b.x + b.w / 2 - 30) * scaleX, (b.y + b.h - 2) * scaleY, 60 * scaleX, 4 * scaleY);
 
-      // Boardroom Title
+      // Boardroom Title Badge
       ctx.fillStyle = '#38bdf8';
       ctx.font = `bold ${Math.max(10, 11 * scaleX)}px "Plus Jakarta Sans", sans-serif`;
-      ctx.fillText('CENTRAL BOARDROOM', (b.x + 15) * scaleX, (b.y + 20) * scaleY);
+      ctx.fillText('🏢 CENTRAL BOARDROOM', (b.x + 15) * scaleX, (b.y + 20) * scaleY);
 
       // Central Oval Conference Table
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.16)';
       ctx.beginPath();
-      ctx.ellipse((b.x + b.w / 2) * scaleX, (b.y + b.h / 2 + 5) * scaleY, 90 * scaleX, 55 * scaleY, 0, 0, Math.PI * 2);
+      ctx.ellipse((b.x + b.w / 2) * scaleX, (b.y + b.h / 2 + 5) * scaleY, 95 * scaleX, 58 * scaleY, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#38bdf8';
       ctx.lineWidth = 2;
       ctx.stroke();
 
       // Rotating Center Holographic Core Blip
+      const holoRadius = (8 + Math.sin(s.time * 4) * 2) * scaleX;
       ctx.fillStyle = '#06b6d4';
       ctx.beginPath();
-      ctx.arc((b.x + b.w / 2) * scaleX, (b.y + b.h / 2 + 5) * scaleY, 8 * scaleX + Math.sin(s.time * 4) * 2, 0, Math.PI * 2);
+      ctx.arc((b.x + b.w / 2) * scaleX, (b.y + b.h / 2 + 5) * scaleY, holoRadius, 0, Math.PI * 2);
       ctx.fill();
 
       // ROOM 2: Breakroom / Espresso Lounge (Top-Left)
@@ -154,35 +210,72 @@ export default function Office2DCanvas({
       ctx.strokeRect(br.x * scaleX, br.y * scaleY, br.w * scaleX, br.h * scaleY);
 
       ctx.fillStyle = '#f59e0b';
+      ctx.font = `bold ${Math.max(10, 11 * scaleX)}px "Plus Jakarta Sans", sans-serif`;
       ctx.fillText('☕ ESPRESSO LOUNGE', (br.x + 15) * scaleX, (br.y + 20) * scaleY);
 
-      // Coffee Counter & Machine
+      // Coffee Counter & Espresso Machine
       ctx.fillStyle = '#1e293b';
       ctx.fillRect((br.x + 20) * scaleX, (br.y + 35) * scaleY, 160 * scaleX, 35 * scaleY);
       ctx.fillStyle = '#0284c7';
-      ctx.fillRect((br.x + 50) * scaleX, (br.y + 40) * scaleY, 30 * scaleX, 25 * scaleY); // Espresso machine
+      ctx.fillRect((br.x + 50) * scaleX, (br.y + 38) * scaleY, 32 * scaleX, 26 * scaleY); // Espresso machine
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect((br.x + 62) * scaleX, (br.y + 54) * scaleY, 8 * scaleX, 6 * scaleY); // Dispenser cup
+
+      // Water Cooler
       ctx.fillStyle = '#38bdf8';
       ctx.beginPath();
-      ctx.arc((br.x + 150) * scaleX, (br.y + 50) * scaleY, 12 * scaleX, 0, Math.PI * 2); // Water cooler
+      ctx.arc((br.x + 150) * scaleX, (br.y + 50) * scaleY, 12 * scaleX, 0, Math.PI * 2);
       ctx.fill();
 
       // Lounge Sofa
       ctx.fillStyle = '#334155';
       ctx.fillRect((br.x + 40) * scaleX, (br.y + 130) * scaleY, 120 * scaleX, 35 * scaleY);
 
+      // Spawn Steam Puffs from Coffee Machine
+      if (Math.random() < 0.1) {
+        s.steamParticles.push({
+          x: (br.x + 66) * scaleX + (Math.random() - 0.5) * 8 * scaleX,
+          y: (br.y + 40) * scaleY,
+          vx: (Math.random() - 0.5) * 4,
+          vy: -12 - Math.random() * 8,
+          size: 3 * scaleX,
+          alpha: 0.7,
+          life: 0.9
+        });
+      }
+
+      // Update & Render Steam Particles
+      for (let i = s.steamParticles.length - 1; i >= 0; i--) {
+        const p = s.steamParticles[i];
+        p.life -= delta;
+        p.x += p.vx * delta;
+        p.y += p.vy * delta;
+        p.size += delta * 4 * scaleX;
+        p.alpha = Math.max(0, p.life * 0.8);
+
+        ctx.fillStyle = `rgba(226, 232, 240, ${p.alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (p.life <= 0) {
+          s.steamParticles.splice(i, 1);
+        }
+      }
+
       // ROOM 3: Strategy Whiteboard Area (Top-Center)
       const wb = OFFICE_ZONES.whiteboardArea;
       ctx.fillStyle = '#f8fafc';
-      ctx.fillRect(wb.x * scaleX, wb.y * scaleY, wb.w * scaleX, 20 * scaleY);
+      ctx.fillRect(wb.x * scaleX, wb.y * scaleY, wb.w * scaleX, 24 * scaleY);
       ctx.fillStyle = '#0f172a';
       ctx.font = `bold ${Math.max(9, 10 * scaleX)}px "JetBrains Mono", monospace`;
-      ctx.fillText('SYSTEM ARCHITECTURE WHITEBOARD', (wb.x + 15) * scaleX, (wb.y + 14) * scaleY);
+      ctx.fillText('📐 SYSTEM ARCHITECTURE WHITEBOARD', (wb.x + 15) * scaleX, (wb.y + 16) * scaleY);
 
       // Sticky notes on whiteboard
       const noteCols = ['#fde047', '#38bdf8', '#f472b6', '#4ade80'];
       for (let n = 0; n < 6; n++) {
         ctx.fillStyle = noteCols[n % 4];
-        ctx.fillRect((wb.x + 20 + n * 35) * scaleX, (wb.y + 24) * scaleY, 20 * scaleX, 16 * scaleY);
+        ctx.fillRect((wb.x + 20 + n * 35) * scaleX, (wb.y + 28) * scaleY, 22 * scaleX, 16 * scaleY);
       }
 
       // ROOM 4: Server Cluster Room (Bottom-Right)
@@ -205,14 +298,15 @@ export default function Office2DCanvas({
 
         // Blinking LEDs
         for (let l = 0; l < 5; l++) {
-          ctx.fillStyle = (Math.sin(s.time * 6 + r + l) > 0) ? '#10b981' : '#38bdf8';
+          const isLedOn = Math.sin(s.time * 6 + r + l) > 0;
+          ctx.fillStyle = isLedOn ? '#10b981' : '#38bdf8';
           ctx.fillRect(rx + 6 * scaleX, ry + (15 + l * 18) * scaleY, 6 * scaleX, 4 * scaleY);
           ctx.fillRect(rx + 18 * scaleX, ry + (15 + l * 18) * scaleY, 6 * scaleX, 4 * scaleY);
         }
       }
 
       // ==========================================
-      // 2. DRAW FIXED WORKSTATIONS & DESKS
+      // 2. DRAW FIXED WORKSTATIONS & COMPUTERS
       // ==========================================
       Object.entries(AGENT_DESKS).forEach(([agentId, desk]) => {
         const agent = agents.find(a => a.id === agentId);
@@ -223,26 +317,35 @@ export default function Office2DCanvas({
         const dw = 70 * scaleX;
         const dh = 40 * scaleY;
 
-        // Desk Surface
+        // Desk Surface with Wood/Charcoal Texture
         ctx.fillStyle = '#1e293b';
         ctx.fillRect(dx - dw / 2, dy - dh / 2, dw, dh);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+        ctx.lineWidth = 1;
         ctx.strokeRect(dx - dw / 2, dy - dh / 2, dw, dh);
+
+        // Office Chair
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(dx, dy + 16 * scaleY, 10 * scaleX, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#334155';
+        ctx.stroke();
 
         // Glowing Computer Screen on Desk
         ctx.fillStyle = col;
         ctx.shadowColor = col;
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = 10;
         if (desk.faceAngle === 0) {
-          ctx.fillRect(dx - dw / 2 + 8 * scaleX, dy - dh / 2 + 4 * scaleY, 8 * scaleX, 32 * scaleY);
+          ctx.fillRect(dx - dw / 2 + 8 * scaleX, dy - dh / 2 + 5 * scaleY, 8 * scaleX, 30 * scaleY);
         } else if (desk.faceAngle === Math.PI) {
-          ctx.fillRect(dx + dw / 2 - 16 * scaleX, dy - dh / 2 + 4 * scaleY, 8 * scaleX, 32 * scaleY);
+          ctx.fillRect(dx + dw / 2 - 16 * scaleX, dy - dh / 2 + 5 * scaleY, 8 * scaleX, 30 * scaleY);
         } else {
-          ctx.fillRect(dx - dw / 2 + 10 * scaleX, dy - dh / 2 + 4 * scaleY, 50 * scaleX, 8 * scaleY);
+          ctx.fillRect(dx - dw / 2 + 10 * scaleX, dy - dh / 2 + 5 * scaleY, 50 * scaleX, 8 * scaleY);
         }
         ctx.shadowBlur = 0;
 
-        // Desk Owner Label
+        // Desk Owner Label Badge
         ctx.fillStyle = '#94a3b8';
         ctx.font = `600 ${Math.max(9, 9 * scaleX)}px "JetBrains Mono", monospace`;
         ctx.fillText(agent ? agent.name.split(' ')[0] : '', dx - dw / 2, dy + dh / 2 + 12 * scaleY);
@@ -271,14 +374,14 @@ export default function Office2DCanvas({
                 state.state = 'AT_COFFEE';
                 state.targetX = OFFICE_ZONES.waypoints.coffeeMachine.x + Math.random() * 30;
                 state.targetY = OFFICE_ZONES.waypoints.coffeeMachine.y + Math.random() * 20;
-                state.currentThought = 'Heading to Espresso Lounge for coffee';
+                state.currentThought = 'Brewing fresh espresso at Lounge';
                 state.timer = 7;
               } else if (rand < 0.54) {
                 // Go to whiteboard
                 state.state = 'AT_WHITEBOARD';
                 state.targetX = OFFICE_ZONES.waypoints.whiteboardLeft.x + Math.random() * 100;
                 state.targetY = OFFICE_ZONES.waypoints.whiteboardLeft.y + 20;
-                state.currentThought = 'Sketching architecture at the Whiteboard';
+                state.currentThought = 'Sketching architecture at Whiteboard';
                 state.timer = 8;
               } else if (rand < 0.76) {
                 // Go to server room
@@ -301,7 +404,7 @@ export default function Office2DCanvas({
               state.targetX = state.deskX;
               state.targetY = state.deskY;
               state.currentThought = agent.currentStatus;
-              state.timer = 9 + Math.random() * 6;
+              state.timer = 10 + Math.random() * 6;
             }
           }
         }
@@ -316,91 +419,202 @@ export default function Office2DCanvas({
           const moveDist = state.speed * 60 * delta;
           state.x += (dx / dist) * Math.min(dist, moveDist);
           state.y += (dy / dist) * Math.min(dist, moveDist);
-          state.faceAngle = Math.atan2(dy, dx);
-          state.walkStep += delta * 14;
 
-          // Footstep audio trigger
-          if (Math.random() < 0.08) {
-            officeAudio.playFootstep();
+          // Determine 4-directional facing from movement vector
+          if (Math.abs(dx) > Math.abs(dy)) {
+            state.dir = dx > 0 ? 'right' : 'left';
+          } else if (Math.abs(dy) > 0.1) {
+            state.dir = dy > 0 ? 'down' : 'up';
+          }
+
+          state.walkStep += delta * 9;
+
+          // Spawn Walking Dust Puff Particles
+          if (s.time - state.lastDustTime > 0.22) {
+            state.lastDustTime = s.time;
+            s.dustParticles.push({
+              x: state.x * scaleX,
+              y: state.y * scaleY + 12 * scaleY,
+              vx: (Math.random() - 0.5) * 8,
+              vy: -2 - Math.random() * 4,
+              size: 2.8 * scaleX,
+              alpha: 0.6,
+              life: 0.35
+            });
+            // Footstep audio trigger
+            if (Math.random() < 0.25) {
+              officeAudio.playFootstep();
+            }
+          }
+        } else {
+          // Align with desk facing direction if seated at workstation
+          if (state.state === 'AT_DESK') {
+            const desk = AGENT_DESKS[state.id];
+            if (desk) {
+              if (desk.faceAngle === 0) state.dir = 'right';
+              else if (desk.faceAngle === Math.PI) state.dir = 'left';
+              else if (desk.faceAngle === -Math.PI / 2) state.dir = 'up';
+            }
           }
         }
+      });
 
+      // Update & Render Dust Particles
+      for (let i = s.dustParticles.length - 1; i >= 0; i--) {
+        const p = s.dustParticles[i];
+        p.life -= delta;
+        p.x += p.vx * delta;
+        p.y += p.vy * delta;
+        p.size += delta * 2 * scaleX;
+        p.alpha = Math.max(0, p.life * 1.5);
+
+        ctx.fillStyle = `rgba(148, 163, 184, ${p.alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (p.life <= 0) {
+          s.dustParticles.splice(i, 1);
+        }
+      }
+
+      // ==========================================
+      // 4. DRAW CARTOON CHARACTERS & OVERLAYS
+      // ==========================================
+      // Sort agents by Y coordinate so foreground characters overlap background naturally
+      const sortedAgents = Array.from(s.agentsState.values()).sort((a, b) => a.y - b.y);
+
+      sortedAgents.forEach((state) => {
+        const agent = state.agent;
         const ax = state.x * scaleX;
         const ay = state.y * scaleY;
         const isHovered = s.hoveredAgentId === state.id;
         const isSelected = selectedAgent?.id === state.id;
 
-        // Hover / Selection Aura Ring
-        if (isHovered || isSelected) {
-          ctx.strokeStyle = agent.color;
-          ctx.lineWidth = isSelected ? 3 : 2;
+        const dx = state.targetX - state.x;
+        const dy = state.targetY - state.y;
+        const isWalking = Math.sqrt(dx * dx + dy * dy) > 4;
+
+        // Ground Drop Shadow
+        ctx.beginPath();
+        ctx.ellipse(ax, ay + 14 * scaleY, 14 * scaleX, 6 * scaleY, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+        ctx.fill();
+
+        // Agent Halo / Identifier Ring
+        ctx.beginPath();
+        ctx.ellipse(ax, ay + 14 * scaleY, 16 * scaleX, 7 * scaleY, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = agent.color;
+        ctx.lineWidth = isSelected ? 3 : (isHovered ? 2.5 : 1.2);
+        ctx.stroke();
+
+        if (isSelected) {
+          // Animated Selection Pulse Ring
           ctx.beginPath();
-          ctx.arc(ax, ay, (20 + Math.sin(s.time * 6) * 2) * scaleX, 0, Math.PI * 2);
+          ctx.ellipse(ax, ay + 14 * scaleY, (18 + Math.sin(s.time * 6) * 3) * scaleX, 8 * scaleY, 0, 0, Math.PI * 2);
+          ctx.strokeStyle = agent.color;
+          ctx.lineWidth = 1.5;
           ctx.stroke();
         }
 
-        // Animated Walking Feet (2 small dots that step while walking)
-        if (isWalking) {
-          const stepOffset = Math.sin(state.walkStep) * 6 * scaleX;
-          const perpAngle = state.faceAngle + Math.PI / 2;
-          const fx = Math.cos(perpAngle) * 7 * scaleX;
-          const fy = Math.sin(perpAngle) * 7 * scaleY;
+        // Idle Bobbing Animation when standing/seated
+        const idleBob = isWalking ? 0 : Math.sin(s.time * 4 + state.charIndex) * 1.5;
 
-          ctx.fillStyle = '#475569';
-          ctx.beginPath();
-          ctx.arc(ax + fx + Math.cos(state.faceAngle) * stepOffset, ay + fy + Math.sin(state.faceAngle) * stepOffset, 3.5 * scaleX, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(ax - fx - Math.cos(state.faceAngle) * stepOffset, ay - fy - Math.sin(state.faceAngle) * stepOffset, 3.5 * scaleX, 0, Math.PI * 2);
-          ctx.fill();
+        // Cartoon Folk Character Sprite Rendering (Pixel Art from ai-town 32x32 master atlas)
+        const spriteSize = Math.round(44 * scaleX);
+        const drawX = Math.round(ax - spriteSize / 2);
+        const drawY = Math.round(ay - spriteSize + 14 * scaleY + idleBob);
+
+        const img = spriteImgRef.current;
+        if (img && img.complete && img.naturalWidth > 0) {
+          // Disable smoothing for pin-sharp cartoon pixel art
+          ctx.imageSmoothingEnabled = false;
+
+          const charCol = state.charIndex % 4;
+          const charRow = Math.floor(state.charIndex / 4);
+          const colBase = charCol * 96;
+          const rowBase = charRow * 128;
+
+          const dirOffset = DIR_ROW_OFFSETS[state.dir || 'down'] ?? 0;
+          const sy = rowBase + dirOffset;
+
+          // 3-frame walk sequence: walk1 (0), stand (1), walk2 (2), stand (1)
+          let frameCol = 1;
+          if (isWalking) {
+            const step = Math.floor(state.walkStep) % 4;
+            frameCol = [0, 1, 2, 1][step];
+          }
+          const sx = colBase + frameCol * 32;
+
+          ctx.drawImage(
+            img,
+            sx, sy, 32, 32,
+            drawX, drawY,
+            spriteSize, spriteSize
+          );
+        } else {
+          // Fail-Safe Procedural Chibi Cartoon Fallback
+          drawProceduralChibi(ctx, ax, ay, state, agent, scaleX, scaleY, isWalking, s.time);
         }
 
-        // Agent Avatar Body (Circular Token with Accent Color)
-        ctx.fillStyle = agent.color;
+        // Re-enable smooth text & vector rendering
+        ctx.imageSmoothingEnabled = true;
+
+        // Floating Name Pill Badge (e.g. "⚡ Gemini 3.8")
+        const spriteInfo = AGENT_SPRITES[state.id] || { icon: '🤖', name: agent.name };
+        const labelText = `${spriteInfo.icon} ${agent.name.split(' ')[0]}`;
+        ctx.font = `bold ${Math.max(9, 10 * scaleX)}px "JetBrains Mono", monospace`;
+        const labelW = ctx.measureText(labelText).width;
+
+        const lx = ax - labelW / 2 - 6 * scaleX;
+        const ly = drawY - 14 * scaleY;
+        const lw = labelW + 12 * scaleX;
+        const lh = 15 * scaleY;
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
         ctx.beginPath();
-        ctx.arc(ax, ay, 14 * scaleX, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        // Directional Facing Pointer Nose / Arrow
-        const noseX = ax + Math.cos(state.faceAngle) * 16 * scaleX;
-        const noseY = ay + Math.sin(state.faceAngle) * 16 * scaleY;
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(noseX, noseY, 3 * scaleX, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Agent Initial on Avatar
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `bold ${Math.max(10, 11 * scaleX)}px "Plus Jakarta Sans", sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(agent.name.charAt(0), ax, ay);
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'alphabetic';
-
-        // Floating 2D Speech / Thought Bubble
-        const bubbleText = state.currentThought;
-        ctx.font = `bold ${Math.max(9, 10 * scaleX)}px "Plus Jakarta Sans", sans-serif`;
-        const textW = ctx.measureText(bubbleText).width;
-
-        const bx = ax - textW / 2 - 8 * scaleX;
-        const by = ay - 24 * scaleY;
-        const bw = textW + 16 * scaleX;
-        const bh = 18 * scaleY;
-
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-        ctx.beginPath();
-        ctx.roundRect(bx, by, bw, bh, 6);
+        ctx.roundRect(lx, ly, lw, lh, 4);
         ctx.fill();
         ctx.strokeStyle = agent.color;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1;
         ctx.stroke();
 
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillText(bubbleText, bx + 8 * scaleX, by + 13 * scaleY);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(labelText, lx + 6 * scaleX, ly + 11 * scaleY);
+
+        // Floating Cartoon Thought Bubble (shown during activity or when hovered/selected)
+        if (isHovered || isSelected || Math.sin(s.time * 0.8 + state.charIndex) > -0.3) {
+          const bubbleText = state.currentThought;
+          ctx.font = `bold ${Math.max(9, 9.5 * scaleX)}px "Plus Jakarta Sans", sans-serif`;
+          const textW = ctx.measureText(bubbleText).width;
+
+          const bx = ax - textW / 2 - 8 * scaleX;
+          const by = ly - 22 * scaleY;
+          const bw = textW + 16 * scaleX;
+          const bh = 18 * scaleY;
+
+          // Cartoon Speech Bubble Tail Triangle
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+          ctx.beginPath();
+          ctx.moveTo(ax, ly - 3 * scaleY);
+          ctx.lineTo(ax - 5 * scaleX, by + bh);
+          ctx.lineTo(ax + 5 * scaleX, by + bh);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = agent.color;
+          ctx.stroke();
+
+          // Bubble Body
+          ctx.beginPath();
+          ctx.roundRect(bx, by, bw, bh, 6);
+          ctx.fill();
+          ctx.strokeStyle = agent.color;
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+
+          ctx.fillStyle = '#f8fafc';
+          ctx.fillText(bubbleText, bx + 8 * scaleX, by + 13 * scaleY);
+        }
       });
     };
 
@@ -420,7 +634,7 @@ export default function Office2DCanvas({
         const ax = state.x * scaleX;
         const ay = state.y * scaleY;
         const dist = Math.sqrt((mouseX - ax) ** 2 + (mouseY - ay) ** 2);
-        if (dist < 22 * scaleX) {
+        if (dist < 26 * scaleX) {
           found = state.id;
         }
       });
@@ -442,7 +656,7 @@ export default function Office2DCanvas({
         const ax = state.x * scaleX;
         const ay = state.y * scaleY;
         const dist = Math.sqrt((mouseX - ax) ** 2 + (mouseY - ay) ** 2);
-        if (dist < 25 * scaleX) {
+        if (dist < 28 * scaleX) {
           clicked = state.agent;
         }
       });
@@ -458,7 +672,7 @@ export default function Office2DCanvas({
           state.targetY = mouseY / scaleY;
           state.state = 'USER_DISPATCHED';
           state.currentThought = 'Walking to user-selected coordinate';
-          state.timer = 10;
+          state.timer = 12;
           officeAudio.playDing();
         }
       }
@@ -487,4 +701,61 @@ export default function Office2DCanvas({
       />
     </div>
   );
+}
+
+/**
+ * Procedural Chibi Cartoon Character Fallback
+ * Guaranteed zero-defect vector rendering if spritesheet image is still loading.
+ */
+function drawProceduralChibi(ctx, ax, ay, state, agent, scaleX, scaleY, isWalking, time) {
+  const dir = state.dir || 'down';
+  const charSize = 28 * scaleX;
+  const headY = ay - charSize + 4 * scaleY;
+
+  // Chibi Body / Hoodie in agent color
+  ctx.fillStyle = agent.color || '#3b82f6';
+  ctx.beginPath();
+  ctx.roundRect(ax - 9 * scaleX, headY + 12 * scaleY, 18 * scaleX, 14 * scaleY, 4);
+  ctx.fill();
+
+  // Animated Swinging Legs / Shoes
+  const legOffset = isWalking ? Math.sin(state.walkStep) * 5 * scaleX : 0;
+  ctx.fillStyle = '#1e293b';
+  ctx.fillRect(ax - 6 * scaleX + legOffset, ay + 6 * scaleY, 4 * scaleX, 6 * scaleY);
+  ctx.fillRect(ax + 2 * scaleX - legOffset, ay + 6 * scaleY, 4 * scaleX, 6 * scaleY);
+
+  // Round Chibi Head
+  ctx.fillStyle = '#fed7aa'; // warm skin tone
+  ctx.beginPath();
+  ctx.arc(ax, headY + 4 * scaleY, 10 * scaleX, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hair in agent hair color
+  ctx.fillStyle = agent.hairColor || '#0f172a';
+  ctx.beginPath();
+  ctx.arc(ax, headY + 2 * scaleY, 10.5 * scaleX, Math.PI, Math.PI * 2);
+  ctx.fill();
+
+  // Chibi Expressive Eyes looking in direction of travel
+  let eyeOffsetX = 0;
+  let eyeOffsetY = 0;
+  if (dir === 'left') eyeOffsetX = -3 * scaleX;
+  if (dir === 'right') eyeOffsetX = 3 * scaleX;
+  if (dir === 'up') eyeOffsetY = -2 * scaleY;
+  if (dir === 'down') eyeOffsetY = 2 * scaleY;
+
+  if (dir !== 'up') {
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(ax - 4 * scaleX + eyeOffsetX, headY + 4 * scaleY + eyeOffsetY, 1.8 * scaleX, 0, Math.PI * 2);
+    ctx.arc(ax + 4 * scaleX + eyeOffsetX, headY + 4 * scaleY + eyeOffsetY, 1.8 * scaleX, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye Glint
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(ax - 4.5 * scaleX + eyeOffsetX, headY + 3.5 * scaleY + eyeOffsetY, 0.7 * scaleX, 0, Math.PI * 2);
+    ctx.arc(ax + 3.5 * scaleX + eyeOffsetX, headY + 3.5 * scaleY + eyeOffsetY, 0.7 * scaleX, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }

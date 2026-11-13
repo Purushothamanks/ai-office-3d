@@ -1,7 +1,66 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Send, Terminal, Activity, Copy, Check, Sparkles, Play, Bot, Zap } from 'lucide-react';
 import { officeAudio } from '../utils/officeAudio';
 import confetti from 'canvas-confetti';
+import folkSpriteSheetUrl from '../assets/32x32folk.png';
+
+function CartoonAvatar({ agentId, color, fallbackLetter }) {
+  const canvasRef = useRef(null);
+  const spriteMap = {
+    gemini: 0,
+    claude: 1,
+    deepseek: 2,
+    ollama: 3,
+    vision: 4,
+    diffusion: 5,
+    sentinel: 6
+  };
+  const charIdx = spriteMap[agentId] ?? 0;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.src = folkSpriteSheetUrl || '/assets/32x32folk.png';
+    img.onload = () => {
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, 32, 32);
+      const colBase = (charIdx % 4) * 96 + 32; // stand frame (frame 1)
+      const rowBase = Math.floor(charIdx / 4) * 128; // down facing
+      ctx.drawImage(img, colBase, rowBase, 32, 32, 0, 0, 32, 32);
+    };
+  }, [agentId, charIdx]);
+
+  return (
+    <div
+      style={{
+        width: '52px',
+        height: '52px',
+        borderRadius: '14px',
+        backgroundColor: '#090d16',
+        border: `2px solid ${color}`,
+        boxShadow: `0 0 18px ${color}50`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+        flexShrink: 0
+      }}
+    >
+      <canvas
+        ref={canvasRef}
+        width={32}
+        height={32}
+        style={{
+          width: '44px',
+          height: '44px',
+          imageRendering: 'pixelated'
+        }}
+      />
+    </div>
+  );
+}
 
 export default function AgentCardOverlay({ agent, onClose, onUpdateAgentTask }) {
   const [promptText, setPromptText] = useState('');
@@ -110,15 +169,7 @@ export default function AgentCardOverlay({ agent, onClose, onUpdateAgentTask }) 
       {/* Header */}
       <div className="agent-overlay-header">
         <div className="agent-badge-cluster">
-          <div
-            className="agent-avatar-circle"
-            style={{
-              backgroundColor: agent.color,
-              boxShadow: `0 0 16px ${agent.color}80`
-            }}
-          >
-            {agent.name.charAt(0)}
-          </div>
+          <CartoonAvatar agentId={agent.id} color={agent.color} fallbackLetter={agent.name.charAt(0)} />
           <div>
             <h2 className="agent-name-title">{agent.name}</h2>
             <div className="agent-handle-row">
