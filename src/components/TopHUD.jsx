@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sun, Moon, Volume2, VolumeX, Users, Camera, Sparkles, Activity, Footprints, Eye } from 'lucide-react';
+import { Sun, Moon, Volume2, VolumeX, Users, Camera, Sparkles, Activity, LayoutGrid, Box, Footprints, Eye } from 'lucide-react';
 import { officeAudio } from '../utils/officeAudio';
 import confetti from 'canvas-confetti';
 
@@ -14,7 +14,9 @@ export default function TopHUD({
   simulationSpeed,
   setSimulationSpeed,
   navigationMode,
-  setNavigationMode
+  setNavigationMode,
+  viewMode = '2d',
+  setViewMode
 }) {
   const [fps, setFps] = useState(60);
 
@@ -76,7 +78,7 @@ export default function TopHUD({
         </div>
         <div>
           <div className="top-hud-title-row">
-            <h1 className="top-hud-title">AI Studio 3D</h1>
+            <h1 className="top-hud-title">{viewMode === '2d' ? 'AI Office 2D' : 'AI Studio 3D'}</h1>
             <span className="badge-live-agents">
               <Users style={{ width: '13px', height: '13px' }} />
               {activeAgentsCount} AI Engines Live
@@ -86,39 +88,68 @@ export default function TopHUD({
               {fps} FPS
             </span>
           </div>
-          <p className="top-hud-subtitle">Architectural Walking Studio & Realtime Multi-Agent Lab</p>
+          <p className="top-hud-subtitle">
+            {viewMode === '2d'
+              ? 'Realtime Autonomous 2D Floorplan & Walking Multi-Agent Studio'
+              : 'Architectural Walking Studio & Realtime Multi-Agent Lab'}
+          </p>
         </div>
       </div>
 
       {/* Action Controls Cluster */}
       <div className="top-hud-actions">
-        {/* Navigation Mode Switcher: Walk vs Drone Orbit */}
+        {/* View Mode Switcher: 2D Top View vs 3D Studio */}
         <button
           onClick={() => {
-            setNavigationMode(navigationMode === 'walk' ? 'orbit' : 'walk');
+            const nextMode = viewMode === '2d' ? '3d' : '2d';
+            setViewMode(nextMode);
             officeAudio.playDing();
           }}
-          className={`nav-mode-toggle-btn ${navigationMode === 'walk' ? 'mode-walk' : 'mode-orbit'}`}
-          title={navigationMode === 'walk' ? 'Switch to Drone Orbit Camera' : 'Switch to First-Person Walk Mode (WASD)'}
+          className={`nav-mode-toggle-btn ${viewMode === '2d' ? 'mode-walk' : 'mode-orbit'}`}
+          title={viewMode === '2d' ? 'Switch to 3D Walking Studio' : 'Switch to 2D Top View Office'}
         >
-          {navigationMode === 'walk' ? (
+          {viewMode === '2d' ? (
             <>
-              <Footprints style={{ width: '15px', height: '15px', color: '#10b981' }} />
-              <span>Walk Mode (WASD)</span>
+              <LayoutGrid style={{ width: '15px', height: '15px', color: '#10b981' }} />
+              <span>2D Top View</span>
             </>
           ) : (
             <>
-              <Eye style={{ width: '15px', height: '15px', color: '#38bdf8' }} />
-              <span>Drone Orbit</span>
+              <Box style={{ width: '15px', height: '15px', color: '#38bdf8' }} />
+              <span>3D Studio</span>
             </>
           )}
         </button>
 
-        {/* 4K Studio Snapshot Button */}
+        {/* 3D Navigation Mode Switcher (Visible when in 3D mode) */}
+        {viewMode === '3d' && (
+          <button
+            onClick={() => {
+              setNavigationMode(navigationMode === 'walk' ? 'orbit' : 'walk');
+              officeAudio.playDing();
+            }}
+            className={`nav-mode-toggle-btn ${navigationMode === 'walk' ? 'mode-walk' : 'mode-orbit'}`}
+            title={navigationMode === 'walk' ? 'Switch to Drone Orbit Camera' : 'Switch to First-Person Walk Mode (WASD)'}
+          >
+            {navigationMode === 'walk' ? (
+              <>
+                <Footprints style={{ width: '15px', height: '15px', color: '#10b981' }} />
+                <span>Walk (WASD)</span>
+              </>
+            ) : (
+              <>
+                <Eye style={{ width: '15px', height: '15px', color: '#38bdf8' }} />
+                <span>Orbit</span>
+              </>
+            )}
+          </button>
+        )}
+
+        {/* Snapshot Button */}
         <button
           onClick={handleTakeSnapshot}
           className="hud-action-pill-btn"
-          title="Take 4K 3D Studio Wallpaper Screenshot"
+          title="Take 4K Studio Snapshot"
         >
           <Camera style={{ width: '15px', height: '15px', color: '#38bdf8' }} />
           <span>Snapshot</span>

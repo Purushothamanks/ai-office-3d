@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import Office2DCanvas from './components/Office2DCanvas';
 import Office3DCanvas from './components/Office3DCanvas';
 import TopHUD from './components/TopHUD';
 import OfficeControls from './components/OfficeControls';
@@ -19,8 +20,9 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(true);
   const [simulationSpeed, setSimulationSpeed] = useState(1);
 
-  // First-Person Walk Navigation Engine States
-  const [navigationMode, setNavigationMode] = useState('walk'); // 'walk' (First-Person WASD) or 'orbit' (Drone Camera)
+  // View Mode: '2d' (Top View Office with Autonomous Walking Agents) or '3d' (Walking Room Studio)
+  const [viewMode, setViewMode] = useState('2d'); // Default to 2D Top View as requested!
+  const [navigationMode, setNavigationMode] = useState('walk');
   const [nearbyAgent, setNearbyAgent] = useState(null);
   const [walkDirectionInput, setWalkDirectionInput] = useState(null);
 
@@ -213,26 +215,38 @@ export default function App() {
   };
 
   const handleSelectArea = (area) => {
-    setNavigationMode('orbit'); // Switch to orbit mode when clicking camera presets
+    if (viewMode === '2d') setViewMode('3d');
+    setNavigationMode('orbit');
     setSelectedAgent(null);
     setCurrentArea(area);
   };
 
   return (
     <div className={`office-app-container ${isNightMode ? 'theme-night' : 'theme-day'}`}>
-      {/* 3D WebGL Canvas Viewport with First-Person Walk Navigation Engine */}
-      <Office3DCanvas
-        agents={agents}
-        selectedAgent={selectedAgent}
-        onSelectAgent={handleSelectAgent}
-        isAllHands={isAllHands}
-        currentArea={currentArea}
-        isNightMode={isNightMode}
-        simulationSpeed={simulationSpeed}
-        navigationMode={navigationMode}
-        onNearAgent={setNearbyAgent}
-        walkDirectionInput={walkDirectionInput}
-      />
+      {/* 2D TOP VIEW OFFICE (DEFAULT) vs 3D STUDIO */}
+      {viewMode === '2d' ? (
+        <Office2DCanvas
+          agents={agents}
+          selectedAgent={selectedAgent}
+          onSelectAgent={handleSelectAgent}
+          isAllHands={isAllHands}
+          simulationSpeed={simulationSpeed}
+          isNightMode={isNightMode}
+        />
+      ) : (
+        <Office3DCanvas
+          agents={agents}
+          selectedAgent={selectedAgent}
+          onSelectAgent={handleSelectAgent}
+          isAllHands={isAllHands}
+          currentArea={currentArea}
+          isNightMode={isNightMode}
+          simulationSpeed={simulationSpeed}
+          navigationMode={navigationMode}
+          onNearAgent={setNearbyAgent}
+          walkDirectionInput={walkDirectionInput}
+        />
+      )}
 
       {/* Top HUD Bar */}
       <TopHUD
@@ -247,15 +261,19 @@ export default function App() {
         setSimulationSpeed={setSimulationSpeed}
         navigationMode={navigationMode}
         setNavigationMode={setNavigationMode}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
       />
 
-      {/* Walking Style Controls Overlay & Proximity Card */}
-      <WalkControlsOverlay
-        navigationMode={navigationMode}
-        nearbyAgent={nearbyAgent}
-        onInteractAgent={handleSelectAgent}
-        setWalkDirectionInput={setWalkDirectionInput}
-      />
+      {/* Walking Style Controls Overlay (Active in 3D Walk Mode) */}
+      {viewMode === '3d' && (
+        <WalkControlsOverlay
+          navigationMode={navigationMode}
+          nearbyAgent={nearbyAgent}
+          onInteractAgent={handleSelectAgent}
+          setWalkDirectionInput={setWalkDirectionInput}
+        />
+      )}
 
       {/* All-Hands Meeting Top Banner */}
       <AllHandsModal
@@ -263,18 +281,22 @@ export default function App() {
         onClose={() => setIsAllHands(false)}
       />
 
-      {/* Interactive Studio Radar (Bottom-Left) */}
-      <OfficeRadar
-        agents={agents}
-        selectedAgent={selectedAgent}
-        onSelectAgent={handleSelectAgent}
-      />
+      {/* Interactive Studio Radar (Active in 3D Mode) */}
+      {viewMode === '3d' && (
+        <OfficeRadar
+          agents={agents}
+          selectedAgent={selectedAgent}
+          onSelectAgent={handleSelectAgent}
+        />
+      )}
 
-      {/* Bottom Camera Navigation Presets */}
-      <OfficeControls
-        currentArea={currentArea}
-        onSelectArea={handleSelectArea}
-      />
+      {/* Bottom Camera Navigation Presets (Active in 3D Mode) */}
+      {viewMode === '3d' && (
+        <OfficeControls
+          currentArea={currentArea}
+          onSelectArea={handleSelectArea}
+        />
+      )}
 
       {/* Realtime Activity Feed (Bottom-Right Ticker) */}
       <RealtimeActivityFeed
