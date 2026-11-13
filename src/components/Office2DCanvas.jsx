@@ -1,4 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { Sun, Moon, Volume2, VolumeX, ZoomIn, ZoomOut, RotateCcw, FastForward } from 'lucide-react';
 import { OFFICE_ZONES, AGENT_DESKS } from '../data/office2dLayout';
 import { officeAudio } from '../utils/officeAudio';
 import folkSpriteSheetUrl from '../assets/32x32folk.png';
@@ -26,17 +27,33 @@ const DIR_ROW_OFFSETS = {
   up: 96
 };
 
+// Real contextual dialogue when 2 AI agents meet in corridors or rooms
+const SOCIAL_DIALOGUES = [
+  { pair: ['gemini', 'claude'], text: 'Gemini & Claude: "AST tool call verified; defensive boundaries frozen."' },
+  { pair: ['gemini', 'deepseek'], text: 'Gemini & DeepSeek: "Recursive induction steps converged with zero fallacies."' },
+  { pair: ['claude', 'deepseek'], text: 'Claude & DeepSeek: "Formally proving state transition invariants with Lean."' },
+  { pair: ['ollama', 'sentinel'], text: 'Ollama & Sentinel: "On-device GPU air-gapped; TLS 1.3 certs rotated."' },
+  { pair: ['vision', 'diffusion'], text: 'Vision & Canvas: "4K DOM bounding boxes aligned with PBR glass shaders."' },
+  { pair: ['gemini', 'sentinel'], text: 'Gemini & Sentinel: "Zero-delay MutationObserver guarding runtime DOM."' },
+  { pair: ['ollama', 'gemini'], text: 'Ollama & Gemini: "Serving local embeddings with 4.2ms GPU latency."' }
+];
+
 export default function Office2DCanvas({
   agents,
   selectedAgent,
   onSelectAgent,
   isAllHands,
   simulationSpeed = 1,
-  isNightMode
+  isNightMode: parentIsNightMode
 }) {
   const canvasRef = useRef(null);
   const spriteImgRef = useRef(null);
   const [spriteLoaded, setSpriteLoaded] = useState(false);
+
+  // Local Controls for Minimal Floating Corner Bar
+  const [isNightMode, setIsNightMode] = useState(parentIsNightMode ?? false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [speed, setSpeed] = useState(simulationSpeed);
 
   // Preload Cartoon Folk Spritesheet
   useEffect(() => {
@@ -56,7 +73,7 @@ export default function Office2DCanvas({
     };
   }, []);
 
-  // Autonomous walking agents simulation state
+  // Camera, Navigation & Simulation State
   const simRef = useRef({
     agentsState: new Map(),
     hoveredAgentId: null,
@@ -65,12 +82,23 @@ export default function Office2DCanvas({
     speedRef: 1,
     isAllHandsRef: false,
     dustParticles: [],
-    steamParticles: []
+    steamParticles: [],
+    targetPing: null,
+    activeSocialMeeting: null,
+    // 1:1 Uniform Camera System (Zoom & Pan)
+    camera: {
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      isDragging: false,
+      dragStart: { x: 0, y: 0 },
+      hasDragged: false
+    }
   });
 
   useEffect(() => {
-    simRef.current.speedRef = simulationSpeed;
-  }, [simulationSpeed]);
+    simRef.current.speedRef = speed;
+  }, [speed]);
 
   useEffect(() => {
     simRef.current.isAllHandsRef = isAllHands;
@@ -87,7 +115,6 @@ export default function Office2DCanvas({
         else if (desk.faceAngle === Math.PI) initialDir = 'left';
         else if (desk.faceAngle === -Math.PI / 2) initialDir = 'up';
 
-        // Offset slightly behind the desk chair
         const chairOffsetY = desk.faceAngle === -Math.PI / 2 ? 18 : 6;
         const chairOffsetX = desk.faceAngle === 0 ? -12 : (desk.faceAngle === Math.PI ? 12 : 0);
 
@@ -124,12 +151,20 @@ export default function Office2DCanvas({
     const s = simRef.current;
     let lastTime = performance.now();
 
+    // Resize & Auto-Fit Camera to 1000 x 650 with 1:1 Aspect Ratio
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const rect = canvas.getBoundingClientRect();
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
       ctx.scale(dpr, dpr);
+
+      // Auto-Fit Office Perfectly in Center
+      const fitZoom = Math.min(rect.width / 1000, rect.height / 650) * 0.98;
+      s.camera.zoom = fitZoom;
+      s.camera.panX = (rect.width - 1000 * fitZoom) / 2;
+      s.camera.panY = (rect.height - 650 * fitZoom) / 2;
     };
 
     resize();
@@ -147,94 +182,121 @@ export default function Office2DCanvas({
       const W = rect.width;
       const H = rect.height;
 
-      // Coordinate scaling factor based on 1000 x 650 reference grid
-      const scaleX = W / 1000;
-      const scaleY = H / 650;
+      // Outer Canvas Backdrop (Deep drafting canvas)
+      ctx.fillStyle = isNightMode ? '#070b14' : '#0f172a';
+      ctx.fillRect(0, 0, W, H);
+
+      // Apply 1:1 Uniform Aspect Ratio Camera Transform
+      ctx.save();
+      ctx.translate(s.camera.panX, s.camera.panY);
+      ctx.scale(s.camera.zoom, s.camera.zoom);
+
+      // Architectural Floor Outline Drop Shadow
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.beginPath();
+      ctx.roundRect(16, 16, 968, 618, 12);
+      ctx.fill();
 
       // ==========================================
       // 1. ARCHITECTURAL FLOORING (WOOD, TILE, CARPET)
       // ==========================================
-      drawRealOfficeFloor(ctx, W, H, scaleX, scaleY, isNightMode);
+      drawRealOfficeFloor(ctx, isNightMode);
 
       // ==========================================
       // 2. WALLS, CORRIDORS & PANORAMIC WINDOWS
       // ==========================================
-      drawArchitecturalWallsAndWindows(ctx, W, H, scaleX, scaleY, isNightMode, s.time);
+      drawArchitecturalWallsAndWindows(ctx, isNightMode, s.time);
 
       // ==========================================
-      // 3. SPECIALIZED ZONES & FURNITURE
+      // 3. LIVING ZONES & FURNITURE
       // ==========================================
-      // 3A. Kitchenette & Espresso Bistro
-      drawEspressoBistro(ctx, scaleX, scaleY, isNightMode, s.time, s);
-
-      // 3B. Architecture Whiteboard & Tech Library
-      drawWhiteboardAndLibrary(ctx, scaleX, scaleY, isNightMode, s.time);
-
-      // 3C. GPU Server Cluster & Network Vault
-      drawServerCluster(ctx, scaleX, scaleY, isNightMode, s.time);
-
-      // 3D. Central Executive Glass Boardroom
-      drawExecutiveBoardroom(ctx, scaleX, scaleY, isNightMode, s.time);
-
-      // 3E. Lush Indoor Plants
-      drawBiophilicPlants(ctx, scaleX, scaleY, s.time);
-
-      // 3F. Workstations & Glowing Dual Displays
-      drawWorkstations(ctx, scaleX, scaleY, isNightMode, s.time, agents);
+      drawEspressoBistro(ctx, isNightMode, s.time, s);
+      drawWhiteboardAndLibrary(ctx, isNightMode, s.time);
+      drawServerCluster(ctx, isNightMode, s.time);
+      drawExecutiveBoardroom(ctx, isNightMode, s.time, s);
+      drawFocusPodsAndDivider(ctx, isNightMode);
+      drawBiophilicPlants(ctx, s.time);
+      drawWorkstations(ctx, isNightMode, s.time, agents);
 
       // ==========================================
-      // 4. AUTONOMOUS WALKING AGENT SIMULATION
+      // 4. AUTONOMOUS SIMULATION & SOCIAL INTERACTION
       // ==========================================
-      updateAgentSimulation(s, delta, scaleX, scaleY);
+      updateAgentSimulation(s, delta);
+      renderDustParticles(ctx, s, delta);
+      renderTargetPing(ctx, s, delta);
 
-      // Render dust particles
-      renderDustParticles(ctx, s, delta, scaleX, scaleY);
+      // ==========================================
+      // 5. CARTOON CHARACTERS & OVERLAYS
+      // ==========================================
+      drawCartoonAgents(ctx, s, selectedAgent, spriteImgRef.current);
 
-      // ==========================================
-      // 5. DRAW CARTOON CHARACTERS & OVERLAYS
-      // ==========================================
-      drawCartoonAgents(ctx, s, scaleX, scaleY, selectedAgent, spriteImgRef.current);
+      // Restore Screen Transform
+      ctx.restore();
     };
 
     animate();
 
-    // Mouse Pointer Interaction (Hover & Click)
+    // Mouse Pointer & Zoom/Pan Interactions
+    const handlePointerDown = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      s.camera.isDragging = true;
+      s.camera.hasDragged = false;
+      s.camera.dragStart = { x: e.clientX, y: e.clientY };
+    };
+
     const handlePointerMove = (e) => {
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      const scaleX = rect.width / 1000;
-      const scaleY = rect.height / 650;
+      // Handle Camera Panning
+      if (s.camera.isDragging) {
+        const dx = e.clientX - s.camera.dragStart.x;
+        const dy = e.clientY - s.camera.dragStart.y;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+          s.camera.hasDragged = true;
+          s.camera.panX += dx;
+          s.camera.panY += dy;
+          s.camera.dragStart = { x: e.clientX, y: e.clientY };
+        }
+        return;
+      }
+
+      // Convert Screen Coordinates to Office 1000 x 650 Space
+      const officeX = (mouseX - s.camera.panX) / s.camera.zoom;
+      const officeY = (mouseY - s.camera.panY) / s.camera.zoom;
 
       let found = null;
       s.agentsState.forEach((state) => {
-        const ax = state.x * scaleX;
-        const ay = state.y * scaleY;
-        const dist = Math.sqrt((mouseX - ax) ** 2 + (mouseY - ay) ** 2);
-        if (dist < 28 * scaleX) {
+        const dist = Math.sqrt((officeX - state.x) ** 2 + (officeY - state.y) ** 2);
+        if (dist < 26) {
           found = state.id;
         }
       });
 
       s.hoveredAgentId = found;
-      canvas.style.cursor = found ? 'pointer' : 'default';
+      canvas.style.cursor = found ? 'pointer' : (s.camera.isDragging ? 'grabbing' : 'default');
     };
 
-    const handleClick = (e) => {
+    const handlePointerUp = (e) => {
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      const scaleX = rect.width / 1000;
-      const scaleY = rect.height / 650;
+      const wasDragging = s.camera.hasDragged;
+      s.camera.isDragging = false;
+      s.camera.hasDragged = false;
+
+      if (wasDragging) return; // Don't trigger clicks if user was panning
+
+      // Convert Screen to Office coordinates
+      const officeX = (mouseX - s.camera.panX) / s.camera.zoom;
+      const officeY = (mouseY - s.camera.panY) / s.camera.zoom;
 
       let clicked = null;
       s.agentsState.forEach((state) => {
-        const ax = state.x * scaleX;
-        const ay = state.y * scaleY;
-        const dist = Math.sqrt((mouseX - ax) ** 2 + (mouseY - ay) ** 2);
-        if (dist < 30 * scaleX) {
+        const dist = Math.sqrt((officeX - state.x) ** 2 + (officeY - state.y) ** 2);
+        if (dist < 28) {
           clicked = state.agent;
         }
       });
@@ -243,29 +305,88 @@ export default function Office2DCanvas({
         onSelectAgent(clicked);
         officeAudio.playDing();
       } else if (selectedAgent) {
-        // If an agent is selected, clicking the floor orders them to walk there!
+        // Dispatch selected agent to coordinate with animated target ping
         const state = s.agentsState.get(selectedAgent.id);
         if (state) {
-          state.targetX = mouseX / scaleX;
-          state.targetY = mouseY / scaleY;
+          state.targetX = officeX;
+          state.targetY = officeY;
           state.state = 'USER_DISPATCHED';
           state.currentThought = 'Walking to user-selected coordinate';
           state.timer = 14;
+
+          s.targetPing = {
+            x: officeX,
+            y: officeY,
+            radius: 4,
+            maxRadius: 24,
+            alpha: 1,
+            color: selectedAgent.color || '#38bdf8'
+          };
           officeAudio.playDing();
         }
       }
     };
 
+    // Smooth Mouse Wheel Zoom toward mouse pointer
+    const handleWheel = (e) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const zoomFactor = e.deltaY < 0 ? 1.09 : 0.92;
+      const newZoom = Math.min(2.8, Math.max(0.65, s.camera.zoom * zoomFactor));
+
+      // Zoom toward cursor position
+      s.camera.panX = mouseX - (mouseX - s.camera.panX) * (newZoom / s.camera.zoom);
+      s.camera.panY = mouseY - (mouseY - s.camera.panY) * (newZoom / s.camera.zoom);
+      s.camera.zoom = newZoom;
+    };
+
+    // Double-click floor to reset camera view
+    const handleDoubleClick = () => {
+      resize();
+      officeAudio.playDing();
+    };
+
+    canvas.addEventListener('pointerdown', handlePointerDown);
     canvas.addEventListener('pointermove', handlePointerMove);
-    canvas.addEventListener('click', handleClick);
+    window.addEventListener('pointerup', handlePointerUp);
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    canvas.addEventListener('dblclick', handleDoubleClick);
 
     return () => {
       cancelAnimationFrame(s.animId);
       window.removeEventListener('resize', resize);
+      canvas.removeEventListener('pointerdown', handlePointerDown);
       canvas.removeEventListener('pointermove', handlePointerMove);
-      canvas.removeEventListener('click', handleClick);
+      window.removeEventListener('pointerup', handlePointerUp);
+      canvas.removeEventListener('wheel', handleWheel);
+      canvas.removeEventListener('dblclick', handleDoubleClick);
     };
   }, [agents, isNightMode, selectedAgent]);
+
+  // Reset Camera View Helper
+  const handleResetCamera = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const fitZoom = Math.min(rect.width / 1000, rect.height / 650) * 0.98;
+    simRef.current.camera.zoom = fitZoom;
+    simRef.current.camera.panX = (rect.width - 1000 * fitZoom) / 2;
+    simRef.current.camera.panY = (rect.height - 650 * fitZoom) / 2;
+    officeAudio.playDing();
+  }, []);
+
+  const handleToggleSound = useCallback(() => {
+    const unmuted = officeAudio.toggleMute();
+    setIsMuted(!unmuted);
+  }, []);
+
+  const handleToggleSpeed = useCallback(() => {
+    setSpeed((prev) => (prev === 1 ? 2 : 1));
+    officeAudio.playDing();
+  }, []);
 
   return (
     <div className="office-2d-wrapper" style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
@@ -277,121 +398,199 @@ export default function Office2DCanvas({
           display: 'block'
         }}
       />
+
+      {/* Discrete, Minimal Glass Control Bar (Floating Unobtrusively in Bottom-Left Corner) */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: '20px',
+          left: '20px',
+          zIndex: 40,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: 'rgba(15, 23, 42, 0.85)',
+          backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          borderRadius: '30px',
+          padding: '6px 12px',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
+        }}
+      >
+        <button
+          onClick={() => {
+            setIsNightMode((prev) => !prev);
+            officeAudio.playDing();
+          }}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: isNightMode ? '#38bdf8' : '#f59e0b',
+            cursor: 'pointer',
+            padding: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            borderRadius: '50%'
+          }}
+          title={isNightMode ? 'Switch to Natural Daylight Studio' : 'Switch to Cyber Night Mode'}
+        >
+          {isNightMode ? <Moon style={{ width: '16px', height: '16px' }} /> : <Sun style={{ width: '16px', height: '16px' }} />}
+        </button>
+
+        <div style={{ width: '1px', height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.15)' }} />
+
+        <button
+          onClick={handleToggleSound}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: isMuted ? '#94a3b8' : '#10b981',
+            cursor: 'pointer',
+            padding: '4px',
+            display: 'flex',
+            alignItems: 'center'
+          }}
+          title={isMuted ? 'Unmute Office Audio' : 'Mute Office Audio'}
+        >
+          {isMuted ? <VolumeX style={{ width: '16px', height: '16px' }} /> : <Volume2 style={{ width: '16px', height: '16px' }} />}
+        </button>
+
+        <div style={{ width: '1px', height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.15)' }} />
+
+        <button
+          onClick={handleToggleSpeed}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: speed === 2 ? '#ec4899' : '#cbd5e1',
+            cursor: 'pointer',
+            padding: '4px',
+            fontSize: '11px',
+            fontWeight: 'bold',
+            fontFamily: 'monospace',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '2px'
+          }}
+          title="Toggle Simulation Speed (1x / 2x)"
+        >
+          <FastForward style={{ width: '14px', height: '14px' }} />
+          <span>{speed}x</span>
+        </button>
+
+        <div style={{ width: '1px', height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.15)' }} />
+
+        <button
+          onClick={handleResetCamera}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#94a3b8',
+            cursor: 'pointer',
+            padding: '4px',
+            display: 'flex',
+            alignItems: 'center'
+          }}
+          title="Reset Camera View to Auto-Fit"
+        >
+          <RotateCcw style={{ width: '14px', height: '14px' }} />
+        </button>
+      </div>
     </div>
   );
 }
 
 // =========================================================================
-// SECTION 1: REALISTIC FLOORING ENGINE
+// SECTION 1: ARCHITECTURAL FLOORING (WOOD, PORCELAIN, CARPET, METAL)
 // =========================================================================
-function drawRealOfficeFloor(ctx, W, H, scaleX, scaleY, isNightMode) {
-  // Base Floor: Natural Scandinavian Bleached Oak Wood in Day / Smoked Walnut in Night
-  const plankH = 18 * scaleY;
-  const plankW = 75 * scaleX;
+function drawRealOfficeFloor(ctx, isNightMode) {
+  ctx.save();
 
-  const dayPlankColors = ['#f1e9dd', '#ebe0d0', '#f4ecdF', '#e6d8c4', '#ede2d3'];
+  // 1A. Scandinavian Bleached Oak Wood Planks in Day / Warm Smoked Walnut in Night
+  const plankH = 18;
+  const plankW = 75;
+
+  const dayPlankColors = ['#f4ecdf', '#ebe0d0', '#f1e9dd', '#e6d8c4', '#ede2d3'];
   const nightPlankColors = ['#1a1511', '#221b15', '#28201a', '#1e1813', '#251e18'];
   const colors = isNightMode ? nightPlankColors : dayPlankColors;
 
-  const numRows = Math.ceil(H / plankH);
-  const numCols = Math.ceil(W / plankW) + 2;
+  const startX = 20;
+  const startY = 38;
+  const endX = 980;
+  const endY = 630;
 
-  ctx.save();
-  for (let r = 0; r < numRows; r++) {
-    const y = r * plankH;
-    // Stagger every other row
-    const rowOffset = (r % 2 === 0) ? 0 : plankW / 2;
+  for (let y = startY; y < endY; y += plankH) {
+    const rowIdx = ((y - startY) / plankH) | 0;
+    const rowOffset = (rowIdx % 2 === 0) ? 0 : plankW / 2;
 
-    for (let c = -1; c < numCols; c++) {
-      const x = c * plankW + rowOffset;
-      // Deterministic color hash
-      const colorIdx = Math.abs(Math.sin(r * 12.9898 + c * 78.233) * 10000) % colors.length | 0;
-      ctx.fillStyle = colors[colorIdx];
-      ctx.fillRect(x, y, plankW, plankH);
+    for (let x = startX - plankW; x < endX; x += plankW) {
+      const px = x + rowOffset;
+      if (px + plankW < startX || px > endX) continue;
 
-      // Plank Seams
-      ctx.strokeStyle = isNightMode ? 'rgba(0, 0, 0, 0.45)' : 'rgba(168, 148, 128, 0.28)';
+      const drawX = Math.max(startX, px);
+      const drawW = Math.min(endX, px + plankW) - drawX;
+
+      const colIdx = Math.abs(Math.sin(rowIdx * 12.9898 + (px / plankW) * 78.233) * 10000) % colors.length | 0;
+      ctx.fillStyle = colors[colIdx];
+      ctx.fillRect(drawX, y, drawW, plankH);
+
+      ctx.strokeStyle = isNightMode ? 'rgba(0, 0, 0, 0.45)' : 'rgba(168, 148, 128, 0.25)';
       ctx.lineWidth = 1;
-      ctx.strokeRect(x, y, plankW, plankH);
+      ctx.strokeRect(drawX, y, drawW, plankH);
     }
   }
-  ctx.restore();
 
-  // 1B. Espresso Bistro Porcelain Ceramic Subway Tiles
+  // 1B. Espresso Bistro Ceramic Porcelain Subway Tile Floor
   const br = OFFICE_ZONES.breakroom;
-  ctx.save();
-  const tileCols = isNightMode
-    ? ['#1e293b', '#243247', '#1b2536']
-    : ['#f8fafc', '#edf2f7', '#f1f5f9'];
-  const tileSize = 20 * scaleX;
-  const brX = br.x * scaleX;
-  const brY = br.y * scaleY;
-  const brW = br.w * scaleX;
-  const brH = br.h * scaleY;
+  const tileCols = isNightMode ? ['#1e293b', '#243247', '#1b2536'] : ['#f8fafc', '#edf2f7', '#f1f5f9'];
+  const tileSize = 20;
 
   ctx.fillStyle = isNightMode ? '#1e293b' : '#f8fafc';
-  ctx.fillRect(brX, brY, brW, brH);
+  ctx.fillRect(br.x, br.y, br.w, br.h);
 
-  for (let tx = brX; tx < brX + brW; tx += tileSize) {
-    for (let ty = brY; ty < brY + brH; ty += tileSize) {
-      const idx = (Math.sin(tx + ty) * 100 | 0) % tileCols.length;
-      ctx.fillStyle = tileCols[Math.abs(idx)];
+  for (let tx = br.x; tx < br.x + br.w; tx += tileSize) {
+    for (let ty = br.y; ty < br.y + br.h; ty += tileSize) {
+      const idx = Math.abs((Math.sin(tx * 3 + ty * 7) * 100) | 0) % tileCols.length;
+      ctx.fillStyle = tileCols[idx];
       ctx.fillRect(tx, ty, tileSize, tileSize);
       ctx.strokeStyle = isNightMode ? 'rgba(15, 23, 42, 0.8)' : '#cbd5e1';
       ctx.lineWidth = 1;
       ctx.strokeRect(tx, ty, tileSize, tileSize);
     }
   }
-  // Transition border threshold
   ctx.strokeStyle = isNightMode ? '#475569' : '#94a3b8';
   ctx.lineWidth = 2.5;
-  ctx.strokeRect(brX, brY, brW, brH);
-  ctx.restore();
+  ctx.strokeRect(br.x, br.y, br.w, br.h);
 
-  // 1C. Central Boardroom Acoustic Loop-Pile Carpet
+  // 1C. Executive Boardroom Acoustic Carpet Floor
   const b = OFFICE_ZONES.boardroom;
-  const bx = b.x * scaleX;
-  const by = b.y * scaleY;
-  const bw = b.w * scaleX;
-  const bh = b.h * scaleY;
-
-  ctx.save();
   ctx.fillStyle = isNightMode ? '#0a0f1d' : '#1e293b';
-  ctx.fillRect(bx, by, bw, bh);
+  ctx.fillRect(b.x, b.y, b.w, b.h);
 
-  // Woven Carpet Grid Loop Texture
   ctx.strokeStyle = isNightMode ? 'rgba(56, 189, 248, 0.05)' : 'rgba(255, 255, 255, 0.04)';
   ctx.lineWidth = 1;
-  const carpetGrid = 12 * scaleX;
-  for (let cx = bx; cx < bx + bw; cx += carpetGrid) {
-    ctx.beginPath(); ctx.moveTo(cx, by); ctx.lineTo(cx, by + bh); ctx.stroke();
+  const carpetGrid = 12;
+  for (let cx = b.x; cx < b.x + b.w; cx += carpetGrid) {
+    ctx.beginPath(); ctx.moveTo(cx, b.y); ctx.lineTo(cx, b.y + b.h); ctx.stroke();
   }
-  for (let cy = by; cy < by + bh; cy += carpetGrid) {
-    ctx.beginPath(); ctx.moveTo(bx, cy); ctx.lineTo(bx + bw, cy); ctx.stroke();
+  for (let cy = b.y; cy < b.y + b.h; cy += carpetGrid) {
+    ctx.beginPath(); ctx.moveTo(b.x, cy); ctx.lineTo(b.x + b.w, cy); ctx.stroke();
   }
-  ctx.restore();
 
-  // 1D. Server Cluster Raised Anti-Static Metal Floor Tiles
+  // 1D. GPU Server Cluster Anti-Static Metal Floor
   const sr = OFFICE_ZONES.serverRoom;
-  const srx = sr.x * scaleX;
-  const sry = sr.y * scaleY;
-  const srw = sr.w * scaleX;
-  const srh = sr.h * scaleY;
-
-  ctx.save();
   ctx.fillStyle = '#0f172a';
-  ctx.fillRect(srx, sry, srw, srh);
+  ctx.fillRect(sr.x, sr.y, sr.w, sr.h);
 
-  const metalTile = 28 * scaleX;
-  for (let mx = srx; mx < srx + srw; mx += metalTile) {
-    for (let my = sry; my < sry + srh; my += metalTile) {
+  const metalTile = 28;
+  for (let mx = sr.x; mx < sr.x + sr.w; mx += metalTile) {
+    for (let my = sr.y; my < sr.y + sr.h; my += metalTile) {
       ctx.fillStyle = '#172235';
       ctx.fillRect(mx + 1, my + 1, metalTile - 2, metalTile - 2);
 
-      // Center air grate circle
       ctx.fillStyle = '#090d16';
       ctx.beginPath();
-      ctx.arc(mx + metalTile / 2, my + metalTile / 2, 4 * scaleX, 0, Math.PI * 2);
+      ctx.arc(mx + metalTile / 2, my + metalTile / 2, 4, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.strokeStyle = '#334155';
@@ -400,250 +599,200 @@ function drawRealOfficeFloor(ctx, W, H, scaleX, scaleY, isNightMode) {
     }
   }
 
-  // Yellow & Black Diagonal Hazard Stripe Entrance Tape
-  const hazardW = srw;
-  const hazardH = 8 * scaleY;
+  // Hazard Entrance Tape
   ctx.fillStyle = '#eab308';
-  ctx.fillRect(srx, sry, hazardW, hazardH);
+  ctx.fillRect(sr.x, sr.y, sr.w, 8);
   ctx.fillStyle = '#0f172a';
-  for (let hx = 0; hx < hazardW; hx += 16 * scaleX) {
+  for (let hx = 0; hx < sr.w; hx += 16) {
     ctx.beginPath();
-    ctx.moveTo(srx + hx, sry);
-    ctx.lineTo(srx + hx + 8 * scaleX, sry);
-    ctx.lineTo(srx + hx, sry + hazardH);
+    ctx.moveTo(sr.x + hx, sr.y);
+    ctx.lineTo(sr.x + hx + 8, sr.y);
+    ctx.lineTo(sr.x + hx, sr.y + 8);
     ctx.closePath();
     ctx.fill();
   }
-  ctx.restore();
 
-  // 1E. Lounge Designer Accent Area Rug
-  ctx.save();
-  const rugX = 85 * scaleX;
-  const rugY = 135 * scaleY;
-  const rugW = 145 * scaleX;
-  const rugH = 65 * scaleY;
+  // 1E. Lounge Designer Accent Rug
+  const rugX = 85;
+  const rugY = 135;
+  const rugW = 145;
+  const rugH = 65;
 
   ctx.fillStyle = isNightMode ? '#1e3a5f' : '#0284c7';
   ctx.beginPath();
-  ctx.roundRect(rugX, rugY, rugW, rugH, 12 * scaleX);
+  ctx.roundRect(rugX, rugY, rugW, rugH, 12);
   ctx.fill();
 
-  // Rug Geometric Border Pattern
   ctx.strokeStyle = '#bae6fd';
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.roundRect(rugX + 5 * scaleX, rugY + 5 * scaleY, rugW - 10 * scaleX, rugH - 10 * scaleY, 8 * scaleX);
+  ctx.roundRect(rugX + 5, rugY + 5, rugW - 10, rugH - 10, 8);
   ctx.stroke();
 
-  // Fringe details on sides
-  ctx.strokeStyle = '#e0f2fe';
-  ctx.lineWidth = 1.5;
-  for (let fy = rugY + 8 * scaleY; fy < rugY + rugH - 8 * scaleY; fy += 5 * scaleY) {
-    ctx.beginPath(); ctx.moveTo(rugX - 3 * scaleX, fy); ctx.lineTo(rugX, fy); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(rugX + rugW, fy); ctx.lineTo(rugX + rugW + 3 * scaleX, fy); ctx.stroke();
-  }
   ctx.restore();
 }
 
 // =========================================================================
-// SECTION 2: ARCHITECTURAL WALLS, WINDOWS & LIGHT STREAMS
+// SECTION 2: ARCHITECTURAL WALLS, WINDOWS & TICKING WALL CLOCK
 // =========================================================================
-function drawArchitecturalWallsAndWindows(ctx, W, H, scaleX, scaleY, isNightMode, time) {
+function drawArchitecturalWallsAndWindows(ctx, isNightMode, time) {
   ctx.save();
 
   // 2A. Top Panoramic Curtain Wall Windows (North Skyline)
-  const windowH = 14 * scaleY;
+  const windowH = 18;
   ctx.fillStyle = isNightMode ? '#040711' : '#7dd3fc';
-  ctx.fillRect(0, 0, W, windowH);
+  ctx.fillRect(20, 20, 960, windowH);
 
-  // Distant Skyline Silhouettes through window
-  const cityBuildingW = 35 * scaleX;
-  for (let bx = 0; bx < W; bx += cityBuildingW) {
-    const bHeight = 6 * scaleY + Math.abs(Math.sin(bx * 0.1)) * 6 * scaleY;
+  // Distant Skyline Silhouettes
+  const cityBuildingW = 35;
+  for (let bx = 20; bx < 980; bx += cityBuildingW) {
+    const bHeight = 8 + Math.abs(Math.sin(bx * 0.1)) * 8;
     ctx.fillStyle = isNightMode ? '#091024' : '#bae6fd';
-    ctx.fillRect(bx, windowH - bHeight, cityBuildingW - 4 * scaleX, bHeight);
+    ctx.fillRect(bx, 20 + windowH - bHeight, cityBuildingW - 4, bHeight);
 
-    // City Windows Lights
     if (isNightMode) {
       ctx.fillStyle = (Math.sin(time * 2 + bx) > 0) ? '#fef08a' : '#38bdf8';
-      ctx.fillRect(bx + 4 * scaleX, windowH - bHeight + 2 * scaleY, 2 * scaleX, 2 * scaleY);
-      ctx.fillRect(bx + 14 * scaleX, windowH - bHeight + 4 * scaleY, 2 * scaleX, 2 * scaleY);
+      ctx.fillRect(bx + 4, 20 + windowH - bHeight + 2, 2, 2);
+      ctx.fillRect(bx + 14, 20 + windowH - bHeight + 4, 2, 2);
     }
   }
 
-  // Window Mullions (Vertical Aluminum Frames)
+  // Aluminum Mullions
   ctx.fillStyle = '#334155';
-  for (let mx = 0; mx < W; mx += 60 * scaleX) {
-    ctx.fillRect(mx, 0, 4 * scaleX, windowH);
+  for (let mx = 20; mx < 980; mx += 60) {
+    ctx.fillRect(mx, 20, 4, windowH);
   }
-  ctx.fillRect(0, windowH - 3 * scaleY, W, 4 * scaleY); // Window sill
+  ctx.fillRect(20, 20 + windowH - 3, 960, 4);
 
   // Natural Sunlight Rays Streaming onto Floor (Day Mode)
   if (!isNightMode) {
-    const sunGrad = ctx.createLinearGradient(0, windowH, 200 * scaleX, 350 * scaleY);
-    sunGrad.addColorStop(0, 'rgba(255, 255, 240, 0.12)');
+    const sunGrad = ctx.createLinearGradient(0, 38, 300, 320);
+    sunGrad.addColorStop(0, 'rgba(255, 255, 240, 0.15)');
     sunGrad.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
     ctx.fillStyle = sunGrad;
     ctx.beginPath();
-    ctx.moveTo(150 * scaleX, windowH);
-    ctx.lineTo(450 * scaleX, windowH);
-    ctx.lineTo(600 * scaleX, 300 * scaleY);
-    ctx.lineTo(250 * scaleX, 300 * scaleY);
+    ctx.moveTo(150, 38);
+    ctx.lineTo(450, 38);
+    ctx.lineTo(620, 320);
+    ctx.lineTo(250, 320);
     ctx.closePath();
     ctx.fill();
   }
 
-  // 2B. Outer Architectural Boundary Walls (14px thick with baseboards & drop shadows)
-  const wallThick = 10 * scaleX;
+  // 2B. Real Working Wall Clock at Top Center (Hands tick to system time!)
+  const clockX = 500;
+  const clockY = 28;
+  const clockR = 8;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(clockX, clockY, clockR, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#334155'; ctx.lineWidth = 1.5; ctx.stroke();
+
+  const now = new Date();
+  const secAngle = ((now.getSeconds() + now.getMilliseconds() / 1000) / 60) * Math.PI * 2 - Math.PI / 2;
+  const minAngle = ((now.getMinutes() + now.getSeconds() / 60) / 60) * Math.PI * 2 - Math.PI / 2;
+  const hrAngle = (((now.getHours() % 12) + now.getMinutes() / 60) / 12) * Math.PI * 2 - Math.PI / 2;
+
+  // Hour & Minute Hands (Black)
+  ctx.strokeStyle = '#0f172a';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(clockX, clockY); ctx.lineTo(clockX + Math.cos(hrAngle) * 4.5, clockY + Math.sin(hrAngle) * 4.5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(clockX, clockY); ctx.lineTo(clockX + Math.cos(minAngle) * 6, clockY + Math.sin(minAngle) * 6); ctx.stroke();
+
+  // Second Hand (Red)
+  ctx.strokeStyle = '#ef4444';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(clockX, clockY); ctx.lineTo(clockX + Math.cos(secAngle) * 6.5, clockY + Math.sin(secAngle) * 6.5); ctx.stroke();
+
+  // 2C. Outer Perimeter Walls (14px thick with baseboards & drop shadows)
   ctx.fillStyle = isNightMode ? '#1e293b' : '#e2e8f0';
+  ctx.fillRect(20, 20, 10, 610); // Left
+  ctx.fillRect(970, 20, 10, 610); // Right
+  ctx.fillRect(20, 620, 960, 10); // Bottom
 
-  // Left Outer Wall
-  ctx.fillRect(0, 0, wallThick, H);
-  // Right Outer Wall
-  ctx.fillRect(W - wallThick, 0, wallThick, H);
-  // Bottom Outer Wall
-  ctx.fillRect(0, H - wallThick, W, wallThick);
-
-  // Wall Baseboard Trims
   ctx.fillStyle = isNightMode ? '#334155' : '#94a3b8';
-  ctx.fillRect(wallThick - 2 * scaleX, 0, 2 * scaleX, H);
-  ctx.fillRect(W - wallThick, 0, 2 * scaleX, H);
-  ctx.fillRect(0, H - wallThick, W, 2 * scaleY);
+  ctx.fillRect(28, 20, 2, 610);
+  ctx.fillRect(970, 20, 2, 610);
+  ctx.fillRect(20, 620, 960, 2);
 
-  // Soft Floor Drop Shadows along perimeter walls
-  const wallShadow = ctx.createLinearGradient(wallThick, 0, wallThick + 12 * scaleX, 0);
+  // Soft Floor Drop Shadows
+  const wallShadow = ctx.createLinearGradient(30, 0, 44, 0);
   wallShadow.addColorStop(0, 'rgba(0, 0, 0, 0.28)');
   wallShadow.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = wallShadow;
-  ctx.fillRect(wallThick, 0, 14 * scaleX, H);
-
-  // 2C. Double-Glazed Frosted Glass Boardroom Suite
-  const b = OFFICE_ZONES.boardroom;
-  const bx = b.x * scaleX;
-  const by = b.y * scaleY;
-  const bw = b.w * scaleX;
-  const bh = b.h * scaleY;
-
-  // Glass Wall Shadow
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
-  ctx.fillRect(bx + 4 * scaleX, by + 4 * scaleY, bw, bh);
-
-  // Glass Frame Outer Outline
-  ctx.strokeStyle = isNightMode ? 'rgba(56, 189, 248, 0.45)' : 'rgba(15, 23, 42, 0.4)';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(bx, by, bw, bh);
-
-  // Frosted Glass Privacy Film Band (semi-opaque horizontal center band)
-  ctx.fillStyle = isNightMode ? 'rgba(56, 189, 248, 0.08)' : 'rgba(255, 255, 255, 0.22)';
-  ctx.fillRect(bx, by, bw, 8 * scaleY);
-  ctx.fillRect(bx, by + bh - 8 * scaleY, bw, 8 * scaleY);
-  ctx.fillRect(bx, by, 8 * scaleX, bh);
-  ctx.fillRect(bx + bw - 8 * scaleX, by, 8 * scaleX, bh);
-
-  // Glass Doorway Opening at Bottom Wall
-  const doorW = 60 * scaleX;
-  const doorX = bx + bw / 2 - doorW / 2;
-  ctx.clearRect(doorX, by + bh - 4 * scaleY, doorW, 8 * scaleY);
-
-  // Stainless Steel Door Frame Threshold
-  ctx.fillStyle = '#94a3b8';
-  ctx.fillRect(doorX, by + bh - 2 * scaleY, doorW, 4 * scaleY);
-
-  // Aluminum Mullion Posts
-  ctx.fillStyle = '#64748b';
-  const postStep = 75 * scaleX;
-  for (let px = bx; px <= bx + bw; px += postStep) {
-    ctx.fillRect(px - 2 * scaleX, by - 2 * scaleY, 4 * scaleX, 6 * scaleY);
-    if (px < doorX || px > doorX + doorW) {
-      ctx.fillRect(px - 2 * scaleX, by + bh - 4 * scaleY, 4 * scaleX, 6 * scaleY);
-    }
-  }
-
-  // Specular Sheen Diagonal Highlights on Glass
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(bx + 20 * scaleX, by);
-  ctx.lineTo(bx + 60 * scaleX, by + 40 * scaleY);
-  ctx.moveTo(bx + bw - 60 * scaleX, by + bh - 40 * scaleY);
-  ctx.lineTo(bx + bw - 20 * scaleX, by + bh);
-  ctx.stroke();
+  ctx.fillRect(30, 20, 14, 610);
 
   ctx.restore();
 }
 
 // =========================================================================
-// SECTION 3: DETAILED MODERN FURNITURE & LIVING ZONES
+// SECTION 3: LIVING ZONES & FURNITURE
 // =========================================================================
 
 // 3A. Kitchenette & Espresso Bistro
-function drawEspressoBistro(ctx, scaleX, scaleY, isNightMode, time, s) {
+function drawEspressoBistro(ctx, isNightMode, time, s) {
   const br = OFFICE_ZONES.breakroom;
-  const kx = (br.x + 15) * scaleX;
-  const ky = (br.y + 20) * scaleY;
-  const kw = 175 * scaleX;
-  const kh = 45 * scaleY;
+  const kx = br.x + 15;
+  const ky = br.y + 15;
+  const kw = 175;
+  const kh = 45;
 
   ctx.save();
 
-  // Quartz Countertop Drop Shadow
+  // Countertop Drop Shadow
   ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
-  ctx.fillRect(kx + 4 * scaleX, ky + 4 * scaleY, kw, kh);
+  ctx.fillRect(kx + 4, ky + 4, kw, kh);
 
-  // Modern L-Shaped Kitchen Counter Base
+  // Quartz Counter Base
   ctx.fillStyle = isNightMode ? '#1e293b' : '#f8fafc';
   ctx.fillRect(kx, ky, kw, kh);
   ctx.strokeStyle = '#94a3b8';
   ctx.lineWidth = 1.5;
   ctx.strokeRect(kx, ky, kw, kh);
 
-  // Chrome Kitchen Sink & Gooseneck Faucet
+  // Stainless Sink & Chrome Faucet
   ctx.fillStyle = '#94a3b8';
-  ctx.fillRect(kx + 12 * scaleX, ky + 10 * scaleY, 32 * scaleX, 25 * scaleY);
+  ctx.fillRect(kx + 12, ky + 10, 32, 25);
   ctx.fillStyle = '#64748b';
-  ctx.fillRect(kx + 14 * scaleX, ky + 12 * scaleY, 28 * scaleX, 21 * scaleY);
-  // Faucet
+  ctx.fillRect(kx + 14, ky + 12, 28, 21);
   ctx.fillStyle = '#cbd5e1';
-  ctx.beginPath();
-  ctx.arc(kx + 28 * scaleX, ky + 8 * scaleY, 3.5 * scaleX, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(kx + 28, ky + 8, 3.5, 0, Math.PI * 2); ctx.fill();
 
   // Commercial Double-Group Italian Espresso Machine
-  const emX = kx + 65 * scaleX;
-  const emY = ky + 6 * scaleY;
-  const emW = 38 * scaleX;
-  const emH = 32 * scaleY;
+  const emX = kx + 65;
+  const emY = ky + 6;
+  const emW = 38;
+  const emH = 32;
 
-  ctx.fillStyle = '#0284c7'; // Polished blue/chrome chassis
+  ctx.fillStyle = '#0284c7';
   ctx.fillRect(emX, emY, emW, emH);
   ctx.strokeStyle = '#38bdf8';
   ctx.lineWidth = 1;
   ctx.strokeRect(emX, emY, emW, emH);
 
-  // Dual Portafilters & Pressure Gauges
+  // Portafilters & Pressure Gauges
   ctx.fillStyle = '#0f172a';
-  ctx.fillRect(emX + 6 * scaleX, emY + emH - 8 * scaleY, 8 * scaleX, 6 * scaleY);
-  ctx.fillRect(emX + 24 * scaleX, emY + emH - 8 * scaleY, 8 * scaleX, 6 * scaleY);
+  ctx.fillRect(emX + 6, emY + emH - 8, 8, 6);
+  ctx.fillRect(emX + 24, emY + emH - 8, 8, 6);
   ctx.fillStyle = '#f59e0b';
   ctx.beginPath();
-  ctx.arc(emX + 10 * scaleX, emY + 8 * scaleY, 3 * scaleX, 0, Math.PI * 2);
-  ctx.arc(emX + 28 * scaleX, emY + 8 * scaleY, 3 * scaleX, 0, Math.PI * 2);
+  ctx.arc(emX + 10, emY + 8, 3, 0, Math.PI * 2);
+  ctx.arc(emX + 28, emY + 8, 3, 0, Math.PI * 2);
   ctx.fill();
 
-  // Ceramic Cups warming on top of machine
+  // Ceramic Cups on Warmer
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(emX + 4 * scaleX, emY - 3 * scaleY, 6 * scaleX, 4 * scaleY);
-  ctx.fillRect(emX + 14 * scaleX, emY - 3 * scaleY, 6 * scaleX, 4 * scaleY);
-  ctx.fillRect(emX + 24 * scaleX, emY - 3 * scaleY, 6 * scaleX, 4 * scaleY);
+  ctx.fillRect(emX + 4, emY - 3, 6, 4);
+  ctx.fillRect(emX + 14, emY - 3, 6, 4);
+  ctx.fillRect(emX + 24, emY - 3, 6, 4);
 
   // Steam Puffs rising from Espresso Machine
   if (Math.random() < 0.12) {
     s.steamParticles.push({
-      x: emX + 20 * scaleX + (Math.random() - 0.5) * 12 * scaleX,
-      y: emY - 2 * scaleY,
+      x: emX + 20 + (Math.random() - 0.5) * 12,
+      y: emY - 2,
       vx: (Math.random() - 0.5) * 6,
       vy: -14 - Math.random() * 8,
-      size: 3.2 * scaleX,
+      size: 3.2,
       alpha: 0.75,
       life: 0.95
     });
@@ -655,7 +804,7 @@ function drawEspressoBistro(ctx, scaleX, scaleY, isNightMode, time, s) {
     p.life -= 0.016;
     p.x += p.vx * 0.016;
     p.y += p.vy * 0.016;
-    p.size += 0.016 * 5 * scaleX;
+    p.size += 0.016 * 5;
     p.alpha = Math.max(0, p.life * 0.7);
 
     ctx.fillStyle = `rgba(241, 245, 249, ${p.alpha})`;
@@ -666,241 +815,285 @@ function drawEspressoBistro(ctx, scaleX, scaleY, isNightMode, time, s) {
     if (p.life <= 0) s.steamParticles.splice(i, 1);
   }
 
-  // Double-Door Stainless Steel Refrigerator
-  const frX = kx + 125 * scaleX;
-  const frY = ky + 4 * scaleY;
-  const frW = 42 * scaleX;
-  const frH = 36 * scaleY;
-
+  // Double-Door Stainless Steel Fridge
+  const frX = kx + 125;
+  const frY = ky + 4;
+  const frW = 42;
+  const frH = 36;
   ctx.fillStyle = '#cbd5e1';
   ctx.fillRect(frX, frY, frW, frH);
   ctx.strokeStyle = '#64748b';
   ctx.lineWidth = 1.5;
   ctx.strokeRect(frX, frY, frW, frH);
-  // Split Doors line
-  ctx.beginPath();
-  ctx.moveTo(frX + frW / 2, frY);
-  ctx.lineTo(frX + frW / 2, frY + frH);
-  ctx.stroke();
-  // Handles
-  ctx.fillStyle = '#334155';
-  ctx.fillRect(frX + frW / 2 - 3 * scaleX, frY + 12 * scaleY, 2 * scaleX, 12 * scaleY);
-  ctx.fillRect(frX + frW / 2 + 1 * scaleX, frY + 12 * scaleY, 2 * scaleX, 12 * scaleY);
+  ctx.beginPath(); ctx.moveTo(frX + frW / 2, frY); ctx.lineTo(frX + frW / 2, frY + frH); ctx.stroke();
 
-  // Water Cooler (Blue 5-Gallon Bottle)
-  const wcX = kx + kw + 14 * scaleX;
-  const wcY = ky + 12 * scaleY;
+  // Water Cooler (Blue Bottle) with rising bubbles
+  const wcX = kx + kw + 14;
+  const wcY = ky + 12;
   ctx.fillStyle = '#f8fafc';
-  ctx.fillRect(wcX - 8 * scaleX, wcY, 16 * scaleX, 26 * scaleY);
+  ctx.fillRect(wcX - 8, wcY, 16, 26);
   ctx.fillStyle = '#38bdf8';
-  ctx.beginPath();
-  ctx.arc(wcX, wcY - 6 * scaleY, 9 * scaleX, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(wcX, wcY - 6, 9, 0, Math.PI * 2); ctx.fill();
+  // Water bubble
+  const bubY = wcY - 6 + Math.sin(time * 4) * 4;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(wcX - 2, bubY, 1.8, 0, Math.PI * 2); ctx.fill();
 
-  // Modern L-Shaped Sectional Fabric Sofa (Teal/Charcoal)
-  const sofaX = (br.x + 30) * scaleX;
-  const sofaY = (br.y + 115) * scaleY;
-  const sofaW = 105 * scaleX;
-  const sofaH = 42 * scaleY;
+  // Breakfast Bar with 3 Stools
+  const barX = br.x + 205;
+  const barY = br.y + 70;
+  ctx.fillStyle = '#c89d66';
+  ctx.fillRect(barX, barY, 16, 85);
+  ctx.strokeStyle = '#8a6538';
+  ctx.strokeRect(barX, barY, 16, 85);
 
+  for (let sIdx = 0; sIdx < 3; sIdx++) {
+    const stY = barY + 15 + sIdx * 28;
+    ctx.fillStyle = '#5c3a21';
+    ctx.beginPath(); ctx.arc(barX + 8, stY, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#2d180a'; ctx.stroke();
+  }
+
+  // L-Shaped Sectional Sofa
+  const sofaX = br.x + 30;
+  const sofaY = br.y + 115;
+  const sofaW = 105;
+  const sofaH = 42;
   ctx.fillStyle = isNightMode ? '#1e293b' : '#334155';
-  ctx.beginPath();
-  ctx.roundRect(sofaX, sofaY, sofaW, sofaH, 8 * scaleX);
-  ctx.fill();
+  ctx.beginPath(); ctx.roundRect(sofaX, sofaY, sofaW, sofaH, 8); ctx.fill();
   ctx.strokeStyle = isNightMode ? '#334155' : '#475569';
-  ctx.lineWidth = 2;
-  ctx.stroke();
+  ctx.lineWidth = 2; ctx.stroke();
 
-  // Cozy Throw Pillows
-  ctx.fillStyle = '#f59e0b';
-  ctx.beginPath(); ctx.roundRect(sofaX + 8 * scaleX, sofaY + 6 * scaleY, 14 * scaleX, 12 * scaleY, 3); ctx.fill();
-  ctx.fillStyle = '#06b6d4';
-  ctx.beginPath(); ctx.roundRect(sofaX + sofaW - 22 * scaleX, sofaY + 6 * scaleY, 14 * scaleX, 12 * scaleY, 3); ctx.fill();
+  // Throw Pillows
+  ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.roundRect(sofaX + 8, sofaY + 6, 14, 12, 3); ctx.fill();
+  ctx.fillStyle = '#06b6d4'; ctx.beginPath(); ctx.roundRect(sofaX + sofaW - 22, sofaY + 6, 14, 12, 3); ctx.fill();
 
-  // Round Scandinavian Birch Coffee Table
-  const ctX = sofaX + sofaW + 20 * scaleX;
+  // Round Coffee Table
+  const ctX = sofaX + sofaW + 20;
   const ctY = sofaY + sofaH / 2;
   ctx.fillStyle = '#d4b996';
-  ctx.beginPath();
-  ctx.arc(ctX, ctY, 16 * scaleX, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#a2835e';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  ctx.beginPath(); ctx.arc(ctX, ctY, 16, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#a2835e'; ctx.lineWidth = 1.5; ctx.stroke();
 
-  // Tech Magazines & Small Planter on Coffee Table
-  ctx.fillStyle = '#ef4444';
-  ctx.fillRect(ctX - 8 * scaleX, ctY - 6 * scaleY, 10 * scaleX, 12 * scaleY);
-  ctx.fillStyle = '#10b981';
-  ctx.beginPath();
-  ctx.arc(ctX + 5 * scaleX, ctY + 2 * scaleY, 4 * scaleX, 0, Math.PI * 2);
-  ctx.fill();
+  // Illuminated Snack Vending Machine
+  const vmX = br.x + 15;
+  const vmY = br.y + 115;
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(vmX, vmY, 20, 38);
+  ctx.fillStyle = '#38bdf8';
+  ctx.fillRect(vmX + 3, vmY + 4, 14, 20); // Glowing glass
+  ctx.fillStyle = '#ef4444'; ctx.fillRect(vmX + 5, vmY + 8, 4, 3);
+  ctx.fillStyle = '#10b981'; ctx.fillRect(vmX + 11, vmY + 8, 4, 3);
 
-  // Zone Label
-  ctx.fillStyle = '#f59e0b';
-  ctx.font = `bold ${Math.max(10, 11 * scaleX)}px "Plus Jakarta Sans", sans-serif`;
-  ctx.fillText('☕ ESPRESSO BISTRO & LOUNGE', (br.x + 15) * scaleX, (br.y + 12) * scaleY);
+  // Color-coded Recycling Station (Blue, Green, Black)
+  const rcX = br.x + 195;
+  const rcY = br.y + 160;
+  ctx.fillStyle = '#2563eb'; ctx.beginPath(); ctx.arc(rcX, rcY, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#16a34a'; ctx.beginPath(); ctx.arc(rcX + 13, rcY, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.arc(rcX + 26, rcY, 5, 0, Math.PI * 2); ctx.fill();
 
   ctx.restore();
 }
 
-// 3B. Architecture Whiteboard & Tech Library
-function drawWhiteboardAndLibrary(ctx, scaleX, scaleY, isNightMode, time) {
+// 3B. Architecture Whiteboard & Tech Library with Vertical Oak Slat Feature Wall
+function drawWhiteboardAndLibrary(ctx, isNightMode, time) {
   const wb = OFFICE_ZONES.whiteboardArea;
-  const wbx = wb.x * scaleX;
-  const wby = wb.y * scaleY;
-  const wbw = wb.w * scaleX;
-  const wbh = 26 * scaleY;
+  const wbx = wb.x;
+  const wby = wb.y;
+  const wbw = wb.w;
+  const wbh = 28;
 
   ctx.save();
 
-  // Whiteboard Aluminum Frame & Shadow
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-  ctx.fillRect(wbx + 4 * scaleX, wby + 3 * scaleY, wbw, wbh);
+  // Modern Vertical Oak Slat Feature Wall behind Whiteboard
+  ctx.fillStyle = isNightMode ? '#1e1914' : '#2b231c';
+  ctx.fillRect(wbx - 10, wby - 10, wbw + 20, wbh + 20);
 
-  // Magnetic Whiteboard Surface
+  const slatW = 4;
+  const slatGap = 6;
+  for (let sx = wbx - 10; sx < wbx + wbw + 10; sx += slatGap) {
+    ctx.fillStyle = isNightMode ? '#785633' : '#c89d66';
+    ctx.fillRect(sx, wby - 10, slatW, wbh + 20);
+  }
+
+  // Whiteboard Frame & Surface
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+  ctx.fillRect(wbx + 4, wby + 3, wbw - 60, wbh);
+
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(wbx, wby, wbw, wbh);
+  ctx.fillRect(wbx, wby, wbw - 60, wbh);
   ctx.strokeStyle = '#94a3b8';
   ctx.lineWidth = 2;
-  ctx.strokeRect(wbx, wby, wbw, wbh);
+  ctx.strokeRect(wbx, wby, wbw - 60, wbh);
 
-  // Architecture Flowchart Diagrams drawn on Whiteboard
+  // Hand-Drawn Flowchart Diagram
   ctx.strokeStyle = '#0284c7';
   ctx.lineWidth = 1.2;
-  // Node 1: Request
-  ctx.strokeRect(wbx + 15 * scaleX, wby + 5 * scaleY, 45 * scaleX, 14 * scaleY);
-  // Arrow ->
-  ctx.beginPath();
-  ctx.moveTo(wbx + 60 * scaleX, wby + 12 * scaleY);
-  ctx.lineTo(wbx + 75 * scaleX, wby + 12 * scaleY);
-  ctx.stroke();
-  // Node 2: AST Orchestrator
+  ctx.strokeRect(wbx + 15, wby + 5, 45, 14);
+  ctx.beginPath(); ctx.moveTo(wbx + 60, wby + 12); ctx.lineTo(wbx + 75, wby + 12); ctx.stroke();
   ctx.strokeStyle = '#10b981';
-  ctx.strokeRect(wbx + 75 * scaleX, wby + 5 * scaleY, 55 * scaleX, 14 * scaleY);
-  // Arrow ->
-  ctx.beginPath();
-  ctx.moveTo(wbx + 130 * scaleX, wby + 12 * scaleY);
-  ctx.lineTo(wbx + 145 * scaleX, wby + 12 * scaleY);
-  ctx.stroke();
-  // Node 3: GPU Cluster Vault
+  ctx.strokeRect(wbx + 75, wby + 5, 55, 14);
+  ctx.beginPath(); ctx.moveTo(wbx + 130, wby + 12); ctx.lineTo(wbx + 145, wby + 12); ctx.stroke();
   ctx.strokeStyle = '#eab308';
-  ctx.strokeRect(wbx + 145 * scaleX, wby + 5 * scaleY, 55 * scaleX, 14 * scaleY);
-
-  // Text on Board
-  ctx.fillStyle = '#0f172a';
-  ctx.font = `bold ${Math.max(8, 8.5 * scaleX)}px "JetBrains Mono", monospace`;
-  ctx.fillText('SYSTEM ARCHITECTURE & FORMAL INVARIANTS', wbx + 215 * scaleX, wby + 16 * scaleY);
+  ctx.strokeRect(wbx + 145, wby + 5, 55, 14);
 
   // Sticky Notes on Board
   const notes = ['#fde047', '#f472b6', '#38bdf8', '#4ade80'];
   for (let n = 0; n < 5; n++) {
     ctx.fillStyle = notes[n % notes.length];
-    ctx.fillRect(wbx + (215 + n * 24) * scaleX, wby + 4 * scaleY, 14 * scaleX, 12 * scaleY);
+    ctx.fillRect(wbx + (215 + n * 18), wby + 4, 13, 11);
   }
 
-  // Marker Tray at bottom of board
+  // Bottom Marker Shelf
   ctx.fillStyle = '#64748b';
-  ctx.fillRect(wbx + 10 * scaleX, wby + wbh - 2 * scaleY, wbw - 20 * scaleX, 3 * scaleY);
-  // Color Markers
-  ctx.fillStyle = '#ef4444'; ctx.fillRect(wbx + 40 * scaleX, wby + wbh - 4 * scaleY, 12 * scaleX, 2 * scaleY);
-  ctx.fillStyle = '#3b82f6'; ctx.fillRect(wbx + 55 * scaleX, wby + wbh - 4 * scaleY, 12 * scaleX, 2 * scaleY);
-  ctx.fillStyle = '#10b981'; ctx.fillRect(wbx + 70 * scaleX, wby + wbh - 4 * scaleY, 12 * scaleX, 2 * scaleY);
+  ctx.fillRect(wbx + 10, wby + wbh - 2, wbw - 80, 3);
+  ctx.fillStyle = '#ef4444'; ctx.fillRect(wbx + 40, wby + wbh - 4, 12, 2);
+  ctx.fillStyle = '#3b82f6'; ctx.fillRect(wbx + 55, wby + wbh - 4, 12, 2);
+  ctx.fillStyle = '#10b981'; ctx.fillRect(wbx + 70, wby + wbh - 4, 12, 2);
+
+  // Tall Tech Bookshelf adjacent to Whiteboard
+  const bsX = wbx + wbw - 50;
+  const bsY = wby;
+  const bsW = 45;
+  const bsH = 34;
+
+  ctx.fillStyle = '#5c3a21';
+  ctx.fillRect(bsX, bsY, bsW, bsH);
+  ctx.strokeStyle = '#2e190b';
+  ctx.strokeRect(bsX, bsY, bsW, bsH);
+
+  // Books with Colorful Spines
+  const bookColors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4'];
+  for (let bIdx = 0; bIdx < 6; bIdx++) {
+    ctx.fillStyle = bookColors[bIdx];
+    ctx.fillRect(bsX + 4 + bIdx * 6, bsY + 4, 5, 12);
+    ctx.fillRect(bsX + 4 + bIdx * 6, bsY + 18, 5, 12);
+  }
 
   ctx.restore();
 }
 
 // 3C. GPU Server Cluster & Network Vault
-function drawServerCluster(ctx, scaleX, scaleY, isNightMode, time) {
+function drawServerCluster(ctx, isNightMode, time) {
   const sr = OFFICE_ZONES.serverRoom;
-  const srx = sr.x * scaleX;
-  const sry = sr.y * scaleY;
+  const srx = sr.x;
+  const sry = sr.y;
 
   ctx.save();
 
-  // Zone Title
-  ctx.fillStyle = '#eab308';
-  ctx.font = `bold ${Math.max(10, 11 * scaleX)}px "Plus Jakarta Sans", sans-serif`;
-  ctx.fillText('⚡ GPU SERVER CLUSTER & VAULT', srx + 15 * scaleX, sry + 18 * scaleY);
-
   // 4 Heavy-Duty 42U Server Racks
-  const rackW = 44 * scaleX;
-  const rackH = 125 * scaleY;
-  const rackGap = 10 * scaleX;
+  const rackW = 44;
+  const rackH = 125;
+  const rackGap = 10;
 
   for (let r = 0; r < 4; r++) {
-    const rx = srx + 18 * scaleX + r * (rackW + rackGap);
-    const ry = sry + 35 * scaleY;
+    const rx = srx + 18 + r * (rackW + rackGap);
+    const ry = sry + 35;
 
-    // Rack Outer Chassis (Matte Black with Glass door)
     ctx.fillStyle = '#090d16';
     ctx.fillRect(rx, ry, rackW, rackH);
     ctx.strokeStyle = '#334155';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(rx, ry, rackW, rackH);
 
-    // Server Blades (1U/2U horizontal units)
+    // Server Blades
     for (let u = 0; u < 8; u++) {
-      const uy = ry + (6 + u * 14) * scaleY;
+      const uy = ry + (6 + u * 14);
       ctx.fillStyle = '#172033';
-      ctx.fillRect(rx + 4 * scaleX, uy, rackW - 8 * scaleX, 11 * scaleY);
+      ctx.fillRect(rx + 4, uy, rackW - 8, 11);
 
-      // Drive Bays
       ctx.fillStyle = '#22304d';
-      ctx.fillRect(rx + 6 * scaleX, uy + 2 * scaleY, 14 * scaleX, 7 * scaleY);
+      ctx.fillRect(rx + 6, uy + 2, 14, 7);
 
-      // Blinking Status LEDs (Green, Blue, Amber)
+      // Blinking Status LEDs
       const ledTick = Math.sin(time * 8 + r * 3 + u);
       ctx.fillStyle = ledTick > 0.2 ? '#10b981' : (ledTick < -0.4 ? '#eab308' : '#06b6d4');
-      ctx.fillRect(rx + rackW - 14 * scaleX, uy + 3 * scaleY, 3 * scaleX, 3 * scaleY);
-      ctx.fillRect(rx + rackW - 9 * scaleX, uy + 3 * scaleY, 3 * scaleX, 3 * scaleY);
+      ctx.fillRect(rx + rackW - 14, uy + 3, 3, 3);
+      ctx.fillRect(rx + rackW - 9, uy + 3, 3, 3);
     }
 
-    // Fiber Optic Cable Trunk down side
+    // Fiber Optic Cable Trunk
     ctx.strokeStyle = r % 2 === 0 ? '#38bdf8' : '#facc15';
     ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.moveTo(rx + rackW - 4 * scaleX, ry);
-    ctx.lineTo(rx + rackW - 4 * scaleX, ry + rackH);
+    ctx.moveTo(rx + rackW - 4, ry);
+    ctx.lineTo(rx + rackW - 4, ry + rackH);
     ctx.stroke();
   }
 
-  // Wall-mounted Digital Environmental Telemetry Display
-  const tdx = srx + 18 * scaleX;
-  const tdy = sry + sr.h * scaleY - 24 * scaleY;
+  // Environmental Telemetry Display
+  const tdx = srx + 18;
+  const tdy = sry + sr.h - 24;
   ctx.fillStyle = '#0f172a';
-  ctx.fillRect(tdx, tdy, 205 * scaleX, 16 * scaleY);
+  ctx.fillRect(tdx, tdy, 205, 16);
   ctx.strokeStyle = '#eab308';
   ctx.lineWidth = 1;
-  ctx.strokeRect(tdx, tdy, 205 * scaleX, 16 * scaleY);
+  ctx.strokeRect(tdx, tdy, 205, 16);
 
   ctx.fillStyle = '#eab308';
-  ctx.font = `600 ${Math.max(8.5, 9 * scaleX)}px "JetBrains Mono", monospace`;
-  ctx.fillText('TEMP: 20.8°C | HUMID: 41% RH | CLUSTER LOAD: 74% | TLS: OK', tdx + 6 * scaleX, tdy + 11 * scaleY);
+  ctx.font = '600 9px "JetBrains Mono", monospace';
+  ctx.fillText('TEMP: 20.8°C | HUMID: 41% RH | CLUSTER LOAD: 74% | TLS: OK', tdx + 6, tdy + 11);
+
+  // Red Emergency Stop & Fire Extinguisher on wall
+  ctx.fillStyle = '#ef4444';
+  ctx.beginPath(); ctx.arc(srx + sr.w - 12, sry + 20, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(srx + sr.w - 14, sry + 28, 4, 12);
 
   ctx.restore();
 }
 
-// 3D. Central Executive Glass Boardroom
-function drawExecutiveBoardroom(ctx, scaleX, scaleY, isNightMode, time) {
+// 3D. Central Executive Glass Boardroom with Sliding Door Animation
+function drawExecutiveBoardroom(ctx, isNightMode, time, s) {
   const b = OFFICE_ZONES.boardroom;
-  const bx = b.x * scaleX;
-  const by = b.y * scaleY;
-  const bw = b.w * scaleX;
-  const bh = b.h * scaleY;
+  const bx = b.x;
+  const by = b.y;
+  const bw = b.w;
+  const bh = b.h;
 
   ctx.save();
 
-  // Zone Title
-  ctx.fillStyle = '#38bdf8';
-  ctx.font = `bold ${Math.max(10, 11 * scaleX)}px "Plus Jakarta Sans", sans-serif`;
-  ctx.fillText('🏢 EXECUTIVE BOARDROOM SUITE', bx + 16 * scaleX, by + 18 * scaleY);
+  // Glass Wall Outer Frame
+  ctx.strokeStyle = isNightMode ? 'rgba(56, 189, 248, 0.45)' : 'rgba(15, 23, 42, 0.4)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(bx, by, bw, bh);
 
-  // Wall-Mounted 85" 4K Smart Presentation Screen (North Boardroom Wall)
-  const scW = 120 * scaleX;
-  const scH = 18 * scaleY;
+  // Frosted Privacy Film Bands
+  ctx.fillStyle = isNightMode ? 'rgba(56, 189, 248, 0.08)' : 'rgba(255, 255, 255, 0.22)';
+  ctx.fillRect(bx, by, bw, 8);
+  ctx.fillRect(bx, by + bh - 8, bw, 8);
+  ctx.fillRect(bx, by, 8, bh);
+  ctx.fillRect(bx + bw - 8, by, 8, bh);
+
+  // Animated Sliding Glass Door (opens if an agent is near the doorway!)
+  const doorW = 60;
+  const doorX = bx + bw / 2 - doorW / 2;
+
+  let isAgentNearDoor = false;
+  s.agentsState.forEach((st) => {
+    const distToDoor = Math.sqrt((st.x - (bx + bw / 2)) ** 2 + (st.y - (by + bh)) ** 2);
+    if (distToDoor < 45) isAgentNearDoor = true;
+  });
+
+  const doorSlide = isAgentNearDoor ? 22 : 0;
+
+  // Door Opening Gap
+  ctx.clearRect(doorX, by + bh - 4, doorW, 8);
+
+  // Sliding Glass Door Panels
+  ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+  ctx.fillRect(doorX + 2 - doorSlide, by + bh - 4, doorW / 2 - 2, 6);
+  ctx.fillRect(doorX + doorW / 2 + doorSlide, by + bh - 4, doorW / 2 - 2, 6);
+
+  // Stainless Door Handles
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(doorX + doorW / 2 - 4 - doorSlide, by + bh - 3, 2, 4);
+  ctx.fillRect(doorX + doorW / 2 + 2 + doorSlide, by + bh - 3, 2, 4);
+
+  // Wall-Mounted 85" 4K Smart Presentation Screen
+  const scW = 120;
+  const scH = 18;
   const scX = bx + bw / 2 - scW / 2;
-  const scY = by + 2 * scaleY;
+  const scY = by + 2;
 
   ctx.fillStyle = '#090d16';
   ctx.fillRect(scX, scY, scW, scH);
@@ -908,35 +1101,32 @@ function drawExecutiveBoardroom(ctx, scaleX, scaleY, isNightMode, time) {
   ctx.lineWidth = 1.5;
   ctx.strokeRect(scX, scY, scW, scH);
 
-  // Animated Presentation Screen Graphs & Metrics
   ctx.fillStyle = '#38bdf8';
-  ctx.font = `bold ${Math.max(7.5, 8 * scaleX)}px "JetBrains Mono", monospace`;
-  ctx.fillText('ALL-HANDS CONSENSUS & TELEMETRY STREAM', scX + 8 * scaleX, scY + 11 * scaleY);
+  ctx.font = 'bold 8px "JetBrains Mono", monospace';
+  ctx.fillText('ALL-HANDS SPRINT CONSENSUS & TELEMETRY', scX + 6, scY + 11);
 
-  // Miniature animated waveform on screen
+  // Screen live latency waveform
   ctx.strokeStyle = '#10b981';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (let wx = 0; wx < 30 * scaleX; wx += 3 * scaleX) {
-    const wy = Math.sin(time * 5 + wx * 0.4) * 3 * scaleY;
-    if (wx === 0) ctx.moveTo(scX + scW - 35 * scaleX + wx, scY + 9 * scaleY + wy);
-    else ctx.lineTo(scX + scW - 35 * scaleX + wx, scY + 9 * scaleY + wy);
+  for (let wx = 0; wx < 30; wx += 3) {
+    const wy = Math.sin(time * 5 + wx * 0.4) * 3;
+    if (wx === 0) ctx.moveTo(scX + scW - 35 + wx, scY + 9 + wy);
+    else ctx.lineTo(scX + scW - 35 + wx, scY + 9 + wy);
   }
   ctx.stroke();
 
   // Expansive Racetrack Walnut Conference Table
   const tableX = bx + bw / 2;
-  const tableY = by + bh / 2 + 10 * scaleY;
-  const tableRadiusX = 110 * scaleX;
-  const tableRadiusY = 56 * scaleY;
+  const tableY = by + bh / 2 + 10;
+  const tableRadiusX = 110;
+  const tableRadiusY = 56;
 
-  // Table Floor Shadow
   ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
   ctx.beginPath();
-  ctx.ellipse(tableX + 4 * scaleX, tableY + 5 * scaleY, tableRadiusX, tableRadiusY, 0, 0, Math.PI * 2);
+  ctx.ellipse(tableX + 4, tableY + 5, tableRadiusX, tableRadiusY, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Polished Walnut Wood Veneer Tabletop
   ctx.fillStyle = isNightMode ? '#2a1e15' : '#5c3a21';
   ctx.beginPath();
   ctx.ellipse(tableX, tableY, tableRadiusX, tableRadiusY, 0, 0, Math.PI * 2);
@@ -945,206 +1135,216 @@ function drawExecutiveBoardroom(ctx, scaleX, scaleY, isNightMode, time) {
   ctx.lineWidth = 3;
   ctx.stroke();
 
-  // Built-in Central Brushed Aluminum AV & Power Hub
+  // Central Recessed AV/Power Hub
   ctx.fillStyle = '#94a3b8';
-  ctx.beginPath();
-  ctx.ellipse(tableX, tableY, 28 * scaleX, 14 * scaleY, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(tableX, tableY, 28, 14, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1.5; ctx.stroke();
 
-  // Holographic Core Emitter Ring
-  ctx.fillStyle = '#06b6d4';
-  ctx.beginPath();
-  ctx.arc(tableX, tableY, (6 + Math.sin(time * 4) * 2) * scaleX, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 7 Executive Leather Conference Chairs tucked neatly around table
-  const seatPositions = OFFICE_ZONES.waypoints.boardroomSeats;
-  seatPositions.forEach((seat, idx) => {
-    const sx = seat.x * scaleX;
-    const sy = seat.y * scaleY;
-
-    // Chair 5-Star Caster Base
+  // 7 Executive Leather Chairs around Table
+  OFFICE_ZONES.waypoints.boardroomSeats.forEach((seat) => {
     ctx.fillStyle = '#0f172a';
-    ctx.beginPath();
-    ctx.arc(sx, sy, 8 * scaleX, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(seat.x, seat.y, 8, 0, Math.PI * 2); ctx.fill();
 
-    // Contoured Leather Seat
     ctx.fillStyle = '#1e293b';
-    ctx.beginPath();
-    ctx.roundRect(sx - 7 * scaleX, sy - 7 * scaleY, 14 * scaleX, 14 * scaleY, 4 * scaleX);
-    ctx.fill();
-    ctx.strokeStyle = '#475569';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(seat.x - 7, seat.y - 7, 14, 14, 4); ctx.fill();
+    ctx.strokeStyle = '#475569'; ctx.lineWidth = 1.5; ctx.stroke();
 
-    // Open Laptop on Table in front of chair
-    const lapAngle = Math.atan2(tableY - sy, tableX - sx);
-    const lapX = sx + Math.cos(lapAngle) * 16 * scaleX;
-    const lapY = sy + Math.sin(lapAngle) * 12 * scaleY;
+    // Laptops on Table
+    const lapAngle = Math.atan2(tableY - seat.y, tableX - seat.x);
+    const lapX = seat.x + Math.cos(lapAngle) * 16;
+    const lapY = seat.y + Math.sin(lapAngle) * 12;
 
     ctx.fillStyle = '#cbd5e1';
-    ctx.fillRect(lapX - 6 * scaleX, lapY - 4 * scaleY, 12 * scaleX, 8 * scaleY);
+    ctx.fillRect(lapX - 6, lapY - 4, 12, 8);
     ctx.fillStyle = '#38bdf8';
-    ctx.fillRect(lapX - 5 * scaleX, lapY - 3 * scaleY, 10 * scaleX, 6 * scaleY);
+    ctx.fillRect(lapX - 5, lapY - 3, 10, 6);
   });
 
   ctx.restore();
 }
 
-// 3E. Lush Biophilic Indoor Plants
-function drawBiophilicPlants(ctx, scaleX, scaleY, time) {
+// Focus Pods (Privacy Phone Booths for 1-person calls)
+function drawFocusPodsAndDivider(ctx, isNightMode) {
+  ctx.save();
+  const podSpots = [
+    { x: 285, y: 240 },
+    { x: 285, y: 310 }
+  ];
+
+  podSpots.forEach((pod) => {
+    ctx.fillStyle = isNightMode ? '#1e293b' : '#334155';
+    ctx.fillRect(pod.x, pod.y, 18, 38);
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(pod.x, pod.y, 18, 38);
+
+    // Glass door panel
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.3)';
+    ctx.fillRect(pod.x + 2, pod.y + 4, 14, 30);
+    // Stool inside
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath(); ctx.arc(pod.x + 9, pod.y + 22, 4, 0, Math.PI * 2); ctx.fill();
+  });
+
+  ctx.restore();
+}
+
+// Biophilic Indoor Greenery
+function drawBiophilicPlants(ctx, time) {
   ctx.save();
   const plantSpots = [
-    { x: 305, y: 195, type: 'monstera' }, // Corner by breakroom
-    { x: 715, y: 195, type: 'fig' },      // Corner by boardroom
-    { x: 720, y: 420, type: 'snake' },    // Divider near servers
-    { x: 305, y: 450, type: 'palm' },     // Left corridor
-    { x: 965, y: 60, type: 'monstera' }   // Top right corner
+    { x: 305, y: 195, type: 'monstera' },
+    { x: 715, y: 195, type: 'fig' },
+    { x: 720, y: 420, type: 'snake' },
+    { x: 305, y: 460, type: 'palm' },
+    { x: 965, y: 65, type: 'monstera' }
   ];
 
   plantSpots.forEach((p) => {
-    const px = p.x * scaleX;
-    const py = p.y * scaleY;
-
-    // Planter Pot Shadow
     ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
-    ctx.beginPath();
-    ctx.ellipse(px, py + 10 * scaleY, 12 * scaleX, 5 * scaleY, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.ellipse(p.x, p.y + 10, 12, 5, 0, 0, Math.PI * 2); ctx.fill();
 
-    // Modern Ceramic Planter Pot (Terra Cotta or White)
     ctx.fillStyle = p.type === 'monstera' ? '#ea580c' : '#f8fafc';
-    ctx.beginPath();
-    ctx.roundRect(px - 9 * scaleX, py - 4 * scaleY, 18 * scaleX, 15 * scaleY, 4 * scaleX);
-    ctx.fill();
-    ctx.strokeStyle = '#64748b';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(p.x - 9, p.y - 4, 18, 15, 4); ctx.fill();
+    ctx.strokeStyle = '#64748b'; ctx.lineWidth = 1; ctx.stroke();
 
-    // Lush Green Leaves with gentle organic sway
-    const sway = Math.sin(time * 2 + px) * 1.5 * scaleX;
+    const sway = Math.sin(time * 2 + p.x) * 1.5;
     const leafCols = ['#15803d', '#16a34a', '#22c55e', '#14532d'];
 
     for (let l = 0; l < 5; l++) {
       const angle = (l / 5) * Math.PI * 2 + time * 0.2;
-      const lx = px + Math.cos(angle) * (12 * scaleX + sway);
-      const ly = py - 8 * scaleY + Math.sin(angle) * (8 * scaleY);
+      const lx = p.x + Math.cos(angle) * (12 + sway);
+      const ly = p.y - 8 + Math.sin(angle) * 8;
 
       ctx.fillStyle = leafCols[l % leafCols.length];
-      ctx.beginPath();
-      ctx.ellipse(lx, ly, 8 * scaleX, 5 * scaleY, angle, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.ellipse(lx, ly, 8, 5, angle, 0, Math.PI * 2); ctx.fill();
     }
   });
 
   ctx.restore();
 }
 
-// 3F. Workstations & Glowing Dual Displays
-function drawWorkstations(ctx, scaleX, scaleY, isNightMode, time, agents) {
+// Developer Workstations
+function drawWorkstations(ctx, isNightMode, time, agents) {
   ctx.save();
 
   Object.entries(AGENT_DESKS).forEach(([agentId, desk]) => {
     const agent = agents.find(a => a.id === agentId);
     const col = agent ? agent.color : '#3b82f6';
 
-    const dx = desk.x * scaleX;
-    const dy = desk.y * scaleY;
-    const dw = 76 * scaleX;
-    const dh = 44 * scaleY;
+    const dx = desk.x;
+    const dy = desk.y;
+    const dw = 76;
+    const dh = 44;
 
     // Floor Shadow under Desk
     ctx.fillStyle = 'rgba(0, 0, 0, 0.32)';
-    ctx.fillRect(dx - dw / 2 + 4 * scaleX, dy - dh / 2 + 5 * scaleY, dw, dh);
+    ctx.fillRect(dx - dw / 2 + 4, dy - dh / 2 + 5, dw, dh);
 
-    // Natural Oak / White Desk Surface
+    // Beveled Desk Top
     ctx.fillStyle = isNightMode ? '#1e2433' : '#faf5ee';
-    ctx.beginPath();
-    ctx.roundRect(dx - dw / 2, dy - dh / 2, dw, dh, 5 * scaleX);
-    ctx.fill();
-    ctx.strokeStyle = isNightMode ? '#334155' : '#cbd5e1';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(dx - dw / 2, dy - dh / 2, dw, dh, 5); ctx.fill();
+    ctx.strokeStyle = isNightMode ? '#334155' : '#cbd5e1'; ctx.lineWidth = 1.5; ctx.stroke();
 
     // Felt Desk Mat
-    const matW = 48 * scaleX;
-    const matH = 26 * scaleY;
+    const matW = 48;
+    const matH = 26;
     ctx.fillStyle = isNightMode ? '#0f172a' : '#334155';
-    ctx.fillRect(dx - matW / 2, dy - matH / 2 + 4 * scaleY, matW, matH);
+    ctx.fillRect(dx - matW / 2, dy - matH / 2 + 4, matW, matH);
 
-    // Mechanical Keyboard on Mat
+    // Mechanical Keyboard
     ctx.fillStyle = '#cbd5e1';
-    ctx.fillRect(dx - 14 * scaleX, dy - 2 * scaleY, 26 * scaleX, 10 * scaleY);
+    ctx.fillRect(dx - 14, dy - 2, 26, 10);
     // RGB Key glow
     ctx.fillStyle = col;
-    ctx.fillRect(dx - 12 * scaleX, dy, 22 * scaleX, 2 * scaleY);
+    ctx.fillRect(dx - 12, dy, 22, 2);
 
-    // Ergonomic Mouse
+    // Mouse
     ctx.fillStyle = '#94a3b8';
-    ctx.beginPath();
-    ctx.arc(dx + 18 * scaleX, dy + 2 * scaleY, 3.5 * scaleX, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(dx + 18, dy + 2, 3.5, 0, Math.PI * 2); ctx.fill();
 
-    // Ceramic Coffee Mug
+    // Coffee Mug
     ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(dx - dw / 2 + 10 * scaleX, dy + 8 * scaleY, 4 * scaleX, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(dx - dw / 2 + 10, dy + 8, 4, 0, Math.PI * 2); ctx.fill();
 
-    // Dual Curved Monitors
-    const monW = 26 * scaleX;
-    const monH = 7 * scaleY;
+    // Dual Curved Displays
+    const monW = 26;
+    const monH = 7;
 
-    // Screen 1 (Primary Center-Left)
-    const s1X = dx - monW - 2 * scaleX;
-    const s1Y = dy - dh / 2 + 4 * scaleY;
+    const s1X = dx - monW - 2;
+    const s1Y = dy - dh / 2 + 4;
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(s1X, s1Y, monW, monH);
     ctx.fillStyle = col;
     ctx.shadowColor = col;
     ctx.shadowBlur = 8;
-    ctx.fillRect(s1X + 2 * scaleX, s1Y + 1 * scaleY, monW - 4 * scaleX, monH - 2 * scaleY);
+    ctx.fillRect(s1X + 2, s1Y + 1, monW - 4, monH - 2);
 
-    // Screen 2 (Secondary Angled Right)
-    const s2X = dx + 2 * scaleX;
-    const s2Y = dy - dh / 2 + 4 * scaleY;
+    const s2X = dx + 2;
+    const s2Y = dy - dh / 2 + 4;
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(s2X, s2Y, monW, monH);
     ctx.fillStyle = '#10b981';
-    ctx.fillRect(s2X + 2 * scaleX, s2Y + 1 * scaleY, monW - 4 * scaleX, monH - 2 * scaleY);
+    ctx.fillRect(s2X + 2, s2Y + 1, monW - 4, monH - 2);
     ctx.shadowBlur = 0;
 
-    // Ergonomic Swivel Mesh Office Chair behind desk
-    const chairY = dy + dh / 2 + 10 * scaleY;
+    // Swivel Chair
+    const chairY = dy + dh / 2 + 10;
     ctx.fillStyle = '#090d16';
-    ctx.beginPath();
-    ctx.arc(dx, chairY, 9 * scaleX, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#475569';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(dx, chairY, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#475569'; ctx.lineWidth = 1.5; ctx.stroke();
 
-    // Workstation Label Badge
+    // Station Name Badge
     ctx.fillStyle = col;
-    ctx.font = `bold ${Math.max(8.5, 9 * scaleX)}px "JetBrains Mono", monospace`;
-    ctx.fillText(`${agent?.name.split(' ')[0]} Hub`, dx - dw / 2, dy + dh / 2 + 24 * scaleY);
+    ctx.font = 'bold 9px "JetBrains Mono", monospace';
+    ctx.fillText(`${agent?.name.split(' ')[0]} Hub`, dx - dw / 2, dy + dh / 2 + 24);
   });
 
   ctx.restore();
 }
 
 // =========================================================================
-// SECTION 4: SIMULATION STATE & PARTICLES
+// SECTION 4: SIMULATION, CORRIDOR PATHING & SOCIAL INTERACTIONS
 // =========================================================================
-function updateAgentSimulation(s, delta, scaleX, scaleY) {
+function updateAgentSimulation(s, delta) {
+  // Check for Emergent Social Conversations between 2 nearby walking agents
+  const agentList = Array.from(s.agentsState.values());
+  for (let i = 0; i < agentList.length; i++) {
+    for (let j = i + 1; j < agentList.length; j++) {
+      const a = agentList[i];
+      const b = agentList[j];
+      const dist = Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+
+      if (dist < 55 && !s.activeSocialMeeting && a.state !== 'AT_DESK' && b.state !== 'AT_DESK') {
+        const dialog = SOCIAL_DIALOGUES.find(d =>
+          (d.pair.includes(a.id) && d.pair.includes(b.id))
+        ) || { text: `${a.agent.name.split(' ')[0]} & ${b.agent.name.split(' ')[0]}: "Reviewing sprint roadmap"` };
+
+        s.activeSocialMeeting = {
+          agentA: a.id,
+          agentB: b.id,
+          x: (a.x + b.x) / 2,
+          y: Math.min(a.y, b.y) - 20,
+          text: dialog.text,
+          life: 3.5
+        };
+        // Face each other during chat
+        a.dir = a.x < b.x ? 'right' : 'left';
+        b.dir = b.x < a.x ? 'right' : 'left';
+        break;
+      }
+    }
+  }
+
+  // Update active social meeting timer
+  if (s.activeSocialMeeting) {
+    s.activeSocialMeeting.life -= delta;
+    if (s.activeSocialMeeting.life <= 0) s.activeSocialMeeting = null;
+  }
+
   s.agentsState.forEach((state) => {
     const agent = state.agent;
 
-    // ALL-HANDS OVERRIDE: walk to boardroom table seats
     if (s.isAllHandsRef) {
       state.targetX = state.seatX;
       state.targetY = state.seatY;
@@ -1189,7 +1389,6 @@ function updateAgentSimulation(s, delta, scaleX, scaleY) {
       }
     }
 
-    // Smooth Walking Movement towards Target
     const dx = state.targetX - state.x;
     const dy = state.targetY - state.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -1208,15 +1407,14 @@ function updateAgentSimulation(s, delta, scaleX, scaleY) {
 
       state.walkStep += delta * 9;
 
-      // Spawn Walking Dust Puff Particles
       if (s.time - state.lastDustTime > 0.22) {
         state.lastDustTime = s.time;
         s.dustParticles.push({
-          x: state.x * scaleX,
-          y: state.y * scaleY + 12 * scaleY,
+          x: state.x,
+          y: state.y + 12,
           vx: (Math.random() - 0.5) * 8,
           vy: -2 - Math.random() * 4,
-          size: 2.8 * scaleX,
+          size: 2.8,
           alpha: 0.6,
           life: 0.35
         });
@@ -1237,35 +1435,57 @@ function updateAgentSimulation(s, delta, scaleX, scaleY) {
   });
 }
 
-function renderDustParticles(ctx, s, delta, scaleX, scaleY) {
+function renderDustParticles(ctx, s, delta) {
   for (let i = s.dustParticles.length - 1; i >= 0; i--) {
     const p = s.dustParticles[i];
     p.life -= delta;
     p.x += p.vx * delta;
     p.y += p.vy * delta;
-    p.size += delta * 2 * scaleX;
+    p.size += delta * 2;
     p.alpha = Math.max(0, p.life * 1.5);
 
     ctx.fillStyle = `rgba(148, 163, 184, ${p.alpha})`;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
 
     if (p.life <= 0) s.dustParticles.splice(i, 1);
   }
 }
 
+// Expanding Animated Click-to-Walk Destination Ping (RTS style)
+function renderTargetPing(ctx, s, delta) {
+  if (!s.targetPing) return;
+  const p = s.targetPing;
+  p.radius += delta * 35;
+  p.alpha = Math.max(0, 1 - p.radius / p.maxRadius);
+
+  ctx.save();
+  ctx.strokeStyle = p.color;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = p.alpha;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Center crosshair blip
+  ctx.fillStyle = p.color;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  if (p.radius >= p.maxRadius) s.targetPing = null;
+}
+
 // =========================================================================
 // SECTION 5: CARTOON AGENTS & REALTIME OVERLAYS
 // =========================================================================
-function drawCartoonAgents(ctx, s, scaleX, scaleY, selectedAgent, spriteImg) {
-  // Sort agents by Y coordinate so foreground characters naturally overlap background
+function drawCartoonAgents(ctx, s, selectedAgent, spriteImg) {
   const sortedAgents = Array.from(s.agentsState.values()).sort((a, b) => a.y - b.y);
 
   sortedAgents.forEach((state) => {
     const agent = state.agent;
-    const ax = state.x * scaleX;
-    const ay = state.y * scaleY;
+    const ax = state.x;
+    const ay = state.y;
     const isHovered = s.hoveredAgentId === state.id;
     const isSelected = selectedAgent?.id === state.id;
 
@@ -1273,22 +1493,22 @@ function drawCartoonAgents(ctx, s, scaleX, scaleY, selectedAgent, spriteImg) {
     const dy = state.targetY - state.y;
     const isWalking = Math.sqrt(dx * dx + dy * dy) > 4;
 
-    // Soft Contact Drop Shadow
+    // Contact Floor Shadow
     ctx.beginPath();
-    ctx.ellipse(ax, ay + 14 * scaleY, 14 * scaleX, 6 * scaleY, 0, 0, Math.PI * 2);
+    ctx.ellipse(ax, ay + 14, 14, 6, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
     ctx.fill();
 
-    // Agent Theme Identification Halo Ring
+    // Theme Halo Ring
     ctx.beginPath();
-    ctx.ellipse(ax, ay + 14 * scaleY, 16 * scaleX, 7 * scaleY, 0, 0, Math.PI * 2);
+    ctx.ellipse(ax, ay + 14, 16, 7, 0, 0, Math.PI * 2);
     ctx.strokeStyle = agent.color;
     ctx.lineWidth = isSelected ? 3.5 : (isHovered ? 2.5 : 1.5);
     ctx.stroke();
 
     if (isSelected) {
       ctx.beginPath();
-      ctx.ellipse(ax, ay + 14 * scaleY, (18 + Math.sin(s.time * 6) * 3) * scaleX, 8 * scaleY, 0, 0, Math.PI * 2);
+      ctx.ellipse(ax, ay + 14, 18 + Math.sin(s.time * 6) * 3, 8, 0, 0, Math.PI * 2);
       ctx.strokeStyle = agent.color;
       ctx.lineWidth = 1.5;
       ctx.stroke();
@@ -1296,10 +1516,10 @@ function drawCartoonAgents(ctx, s, scaleX, scaleY, selectedAgent, spriteImg) {
 
     const idleBob = isWalking ? 0 : Math.sin(s.time * 4 + state.charIndex) * 1.5;
 
-    // Draw Folk Character Sprite from ai-town Atlas
-    const spriteSize = Math.round(44 * scaleX);
+    // Draw Sprite from ai-town Atlas
+    const spriteSize = 44;
     const drawX = Math.round(ax - spriteSize / 2);
-    const drawY = Math.round(ay - spriteSize + 14 * scaleY + idleBob);
+    const drawY = Math.round(ay - spriteSize + 14 + idleBob);
 
     if (spriteImg && spriteImg.complete && spriteImg.naturalWidth > 0) {
       ctx.imageSmoothingEnabled = false;
@@ -1312,7 +1532,7 @@ function drawCartoonAgents(ctx, s, scaleX, scaleY, selectedAgent, spriteImg) {
       const dirOffset = DIR_ROW_OFFSETS[state.dir || 'down'] ?? 0;
       const sy = rowBase + dirOffset;
 
-      let frameCol = 1; // standing pose
+      let frameCol = 1;
       if (isWalking) {
         const step = Math.floor(state.walkStep) % 4;
         frameCol = [0, 1, 2, 1][step];
@@ -1326,7 +1546,7 @@ function drawCartoonAgents(ctx, s, scaleX, scaleY, selectedAgent, spriteImg) {
         spriteSize, spriteSize
       );
     } else {
-      drawProceduralChibi(ctx, ax, ay, state, agent, scaleX, scaleY, isWalking, s.time);
+      drawProceduralChibi(ctx, ax, ay, state, agent, isWalking);
     }
 
     ctx.imageSmoothingEnabled = true;
@@ -1334,13 +1554,13 @@ function drawCartoonAgents(ctx, s, scaleX, scaleY, selectedAgent, spriteImg) {
     // Floating Name Pill Badge
     const spriteInfo = AGENT_SPRITES[state.id] || { icon: '🤖', name: agent.name };
     const labelText = `${spriteInfo.icon} ${agent.name.split(' ')[0]}`;
-    ctx.font = `bold ${Math.max(9, 10 * scaleX)}px "JetBrains Mono", monospace`;
+    ctx.font = 'bold 10px "JetBrains Mono", monospace';
     const labelW = ctx.measureText(labelText).width;
 
-    const lx = ax - labelW / 2 - 6 * scaleX;
-    const ly = drawY - 14 * scaleY;
-    const lw = labelW + 12 * scaleX;
-    const lh = 15 * scaleY;
+    const lx = ax - labelW / 2 - 6;
+    const ly = drawY - 14;
+    const lw = labelW + 12;
+    const lh = 15;
 
     ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
     ctx.beginPath();
@@ -1351,31 +1571,29 @@ function drawCartoonAgents(ctx, s, scaleX, scaleY, selectedAgent, spriteImg) {
     ctx.stroke();
 
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(labelText, lx + 6 * scaleX, ly + 11 * scaleY);
+    ctx.fillText(labelText, lx + 6, ly + 11);
 
-    // Floating Cartoon Speech / Thought Bubble
+    // Floating Thought Bubble
     if (isHovered || isSelected || Math.sin(s.time * 0.8 + state.charIndex) > -0.3) {
       const bubbleText = state.currentThought;
-      ctx.font = `bold ${Math.max(9, 9.5 * scaleX)}px "Plus Jakarta Sans", sans-serif`;
+      ctx.font = 'bold 9.5px "Plus Jakarta Sans", sans-serif';
       const textW = ctx.measureText(bubbleText).width;
 
-      const bx = ax - textW / 2 - 8 * scaleX;
-      const by = ly - 22 * scaleY;
-      const bw = textW + 16 * scaleX;
-      const bh = 18 * scaleY;
+      const bx = ax - textW / 2 - 8;
+      const by = ly - 22;
+      const bw = textW + 16;
+      const bh = 18;
 
-      // Speech Bubble Pointer Triangle
       ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
       ctx.beginPath();
-      ctx.moveTo(ax, ly - 3 * scaleY);
-      ctx.lineTo(ax - 5 * scaleX, by + bh);
-      ctx.lineTo(ax + 5 * scaleX, by + bh);
+      ctx.moveTo(ax, ly - 3);
+      ctx.lineTo(ax - 5, by + bh);
+      ctx.lineTo(ax + 5, by + bh);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = agent.color;
       ctx.stroke();
 
-      // Bubble Rectangle Body
       ctx.beginPath();
       ctx.roundRect(bx, by, bw, bh, 6);
       ctx.fill();
@@ -1384,54 +1602,74 @@ function drawCartoonAgents(ctx, s, scaleX, scaleY, selectedAgent, spriteImg) {
       ctx.stroke();
 
       ctx.fillStyle = '#f8fafc';
-      ctx.fillText(bubbleText, bx + 8 * scaleX, by + 13 * scaleY);
+      ctx.fillText(bubbleText, bx + 8, by + 13);
     }
   });
+
+  // Render Active Social Conversation Balloon
+  if (s.activeSocialMeeting) {
+    const sm = s.activeSocialMeeting;
+    ctx.save();
+    ctx.font = 'bold 10px "Plus Jakarta Sans", sans-serif';
+    const tw = ctx.measureText(sm.text).width;
+    const sx = sm.x - tw / 2 - 10;
+    const sy = sm.y - 24;
+    const sw = tw + 20;
+    const sh = 20;
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+    ctx.beginPath();
+    ctx.roundRect(sx, sy, sw, sh, 6);
+    ctx.fill();
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText(sm.text, sx + 10, sy + 14);
+    ctx.restore();
+  }
 }
 
-function drawProceduralChibi(ctx, ax, ay, state, agent, scaleX, scaleY, isWalking, time) {
+function drawProceduralChibi(ctx, ax, ay, state, agent, isWalking) {
   const dir = state.dir || 'down';
-  const charSize = 28 * scaleX;
-  const headY = ay - charSize + 4 * scaleY;
+  const charSize = 28;
+  const headY = ay - charSize + 4;
 
   ctx.fillStyle = agent.color || '#3b82f6';
   ctx.beginPath();
-  ctx.roundRect(ax - 9 * scaleX, headY + 12 * scaleY, 18 * scaleX, 14 * scaleY, 4);
+  ctx.roundRect(ax - 9, headY + 12, 18, 14, 4);
   ctx.fill();
 
-  const legOffset = isWalking ? Math.sin(state.walkStep) * 5 * scaleX : 0;
+  const legOffset = isWalking ? Math.sin(state.walkStep) * 5 : 0;
   ctx.fillStyle = '#1e293b';
-  ctx.fillRect(ax - 6 * scaleX + legOffset, ay + 6 * scaleY, 4 * scaleX, 6 * scaleY);
-  ctx.fillRect(ax + 2 * scaleX - legOffset, ay + 6 * scaleY, 4 * scaleX, 6 * scaleY);
+  ctx.fillRect(ax - 6 + legOffset, ay + 6, 4, 6);
+  ctx.fillRect(ax + 2 - legOffset, ay + 6, 4, 6);
 
   ctx.fillStyle = '#fed7aa';
-  ctx.beginPath();
-  ctx.arc(ax, headY + 4 * scaleY, 10 * scaleX, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(ax, headY + 4, 10, 0, Math.PI * 2); ctx.fill();
 
   ctx.fillStyle = agent.hairColor || '#0f172a';
-  ctx.beginPath();
-  ctx.arc(ax, headY + 2 * scaleY, 10.5 * scaleX, Math.PI, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(ax, headY + 2, 10.5, Math.PI, Math.PI * 2); ctx.fill();
 
   let eyeOffsetX = 0;
   let eyeOffsetY = 0;
-  if (dir === 'left') eyeOffsetX = -3 * scaleX;
-  if (dir === 'right') eyeOffsetX = 3 * scaleX;
-  if (dir === 'up') eyeOffsetY = -2 * scaleY;
-  if (dir === 'down') eyeOffsetY = 2 * scaleY;
+  if (dir === 'left') eyeOffsetX = -3;
+  if (dir === 'right') eyeOffsetX = 3;
+  if (dir === 'up') eyeOffsetY = -2;
+  if (dir === 'down') eyeOffsetY = 2;
 
   if (dir !== 'up') {
     ctx.fillStyle = '#0f172a';
     ctx.beginPath();
-    ctx.arc(ax - 4 * scaleX + eyeOffsetX, headY + 4 * scaleY + eyeOffsetY, 1.8 * scaleX, 0, Math.PI * 2);
-    ctx.arc(ax + 4 * scaleX + eyeOffsetX, headY + 4 * scaleY + eyeOffsetY, 1.8 * scaleX, 0, Math.PI * 2);
+    ctx.arc(ax - 4 + eyeOffsetX, headY + 4 + eyeOffsetY, 1.8, 0, Math.PI * 2);
+    ctx.arc(ax + 4 + eyeOffsetX, headY + 4 + eyeOffsetY, 1.8, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(ax - 4.5 * scaleX + eyeOffsetX, headY + 3.5 * scaleY + eyeOffsetY, 0.7 * scaleX, 0, Math.PI * 2);
-    ctx.arc(ax + 3.5 * scaleX + eyeOffsetX, headY + 3.5 * scaleY + eyeOffsetY, 0.7 * scaleX, 0, Math.PI * 2);
+    ctx.arc(ax - 4.5 + eyeOffsetX, headY + 3.5 + eyeOffsetY, 0.7, 0, Math.PI * 2);
+    ctx.arc(ax + 3.5 + eyeOffsetX, headY + 3.5 + eyeOffsetY, 0.7, 0, Math.PI * 2);
     ctx.fill();
   }
 }
