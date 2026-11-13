@@ -3,6 +3,8 @@ import Office2DCanvas from './components/Office2DCanvas';
 import Office3DCanvas from './components/Office3DCanvas';
 import AgentCardOverlay from './components/AgentCardOverlay';
 import AllHandsModal from './components/AllHandsModal';
+import FloatingStudioDock from './components/FloatingStudioDock';
+import WalkControlsOverlay from './components/WalkControlsOverlay';
 import { INITIAL_AGENTS, OFFICE_AREAS } from './data/agentsData';
 import { officeAudio } from './utils/officeAudio';
 
@@ -11,13 +13,13 @@ export default function App() {
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [currentArea, setCurrentArea] = useState(null);
   const [isAllHands, setIsAllHands] = useState(false);
-  const [isNightMode, setIsNightMode] = useState(false);
+  const [isNightMode, setIsNightMode] = useState(true);
   const [isMuted, setIsMuted] = useState(true);
   const [simulationSpeed, setSimulationSpeed] = useState(1);
 
-  // View Mode: 2D Top View Office (Clean, Fullscreen)
-  const [viewMode, setViewMode] = useState('2d');
-  const [navigationMode, setNavigationMode] = useState('walk');
+  // View Mode: 3D Autonomous AI Studio by default!
+  const [viewMode, setViewMode] = useState('3d');
+  const [navigationMode, setNavigationMode] = useState('orbit');
   const [nearbyAgent, setNearbyAgent] = useState(null);
   const [walkDirectionInput, setWalkDirectionInput] = useState(null);
 
@@ -249,6 +251,32 @@ export default function App() {
           agent={agents.find((a) => a.id === selectedAgent.id) || selectedAgent}
           onClose={() => setSelectedAgent(null)}
           onUpdateAgentTask={handleUpdateAgentTask}
+        />
+      )}
+
+      {/* Floating Studio Navigation Dock (Minimal, Glassmorphic, Unobtrusive) */}
+      <FloatingStudioDock
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        navigationMode={navigationMode}
+        setNavigationMode={setNavigationMode}
+        currentArea={currentArea}
+        onSelectArea={handleSelectArea}
+        isAllHands={isAllHands}
+        setIsAllHands={setIsAllHands}
+        isNightMode={isNightMode}
+        setIsNightMode={setIsNightMode}
+        isMuted={isMuted}
+        setIsMuted={setIsMuted}
+      />
+
+      {/* Walking Style HUD Controls (Only active when in 3D Walk mode) */}
+      {viewMode === '3d' && navigationMode === 'walk' && (
+        <WalkControlsOverlay
+          navigationMode={navigationMode}
+          nearbyAgent={nearbyAgent}
+          onInteractAgent={handleSelectAgent}
+          setWalkDirectionInput={setWalkDirectionInput}
         />
       )}
     </div>
