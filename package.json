@@ -1,0 +1,33 @@
+{
+  "name": "ai-office-3d",
+  "version": "1.0.0",
+  "description": "🏢 AI Office 3D — Realtime Autonomous AI Studio with Stylized 3D Animated Agents & Live Workstations",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [
+    "3d",
+    "threejs",
+    "ai-agents",
+    "simulation",
+    "office",
+    "animation",
+    "realtime"
+  ],
+  "author": "Purushothaman",
+  "license": "MIT",
+  "dependencies": {
+    "canvas-confetti": "^1.9.4",
+    "lucide-react": "^1.72.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.3.0",
+    "vite": "^8.3.8"
+  }
+}
