@@ -1,5 +1,5 @@
-import React from 'react';
-import { Sun, Moon, Volume2, VolumeX, Users, Zap, Shield, Sparkles } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Sun, Moon, Volume2, VolumeX, Users, Camera, Sparkles, Activity, Cpu } from 'lucide-react';
 import { officeAudio } from '../utils/officeAudio';
 import confetti from 'canvas-confetti';
 
@@ -14,6 +14,28 @@ export default function TopHUD({
   simulationSpeed,
   setSimulationSpeed
 }) {
+  const [fps, setFps] = useState(60);
+
+  // Measure realistic client frame rate
+  useEffect(() => {
+    let frameCount = 0;
+    let lastTime = performance.now();
+
+    const checkFps = () => {
+      frameCount++;
+      const now = performance.now();
+      if (now - lastTime >= 1000) {
+        setFps(Math.min(60, Math.round((frameCount * 1000) / (now - lastTime))));
+        frameCount = 0;
+        lastTime = now;
+      }
+      requestAnimationFrame(checkFps);
+    };
+
+    const animId = requestAnimationFrame(checkFps);
+    return () => cancelAnimationFrame(animId);
+  }, []);
+
   const handleToggleSound = () => {
     const unmuted = officeAudio.toggleMute();
     setIsMuted(!unmuted);
@@ -26,12 +48,19 @@ export default function TopHUD({
       officeAudio.playAllHandsChime();
       try {
         confetti({
-          particleCount: 60,
-          spread: 70,
+          particleCount: 65,
+          spread: 75,
           origin: { y: 0.6 }
         });
       } catch (e) {}
     } else {
+      officeAudio.playDing();
+    }
+  };
+
+  const handleTakeSnapshot = () => {
+    if (typeof window.__captureOffice3DSnapshot === 'function') {
+      window.__captureOffice3DSnapshot();
       officeAudio.playDing();
     }
   };
@@ -49,22 +78,36 @@ export default function TopHUD({
             <h1 className="top-hud-title">AI Studio 3D</h1>
             <span className="badge-live-agents">
               <Users style={{ width: '13px', height: '13px' }} />
-              {activeAgentsCount} Agents Live
+              {activeAgentsCount} AI Engines Live
+            </span>
+            <span className="badge-fps-meter">
+              <Activity style={{ width: '12px', height: '12px', color: '#10b981' }} />
+              {fps} FPS
             </span>
           </div>
-          <p className="top-hud-subtitle">Realtime Autonomous 3D Multi-Agent Workplace</p>
+          <p className="top-hud-subtitle">Autonomous Multimodal 3D Workplace Simulation</p>
         </div>
       </div>
 
       {/* Action Controls Cluster */}
       <div className="top-hud-actions">
+        {/* 4K Studio Snapshot Button */}
+        <button
+          onClick={handleTakeSnapshot}
+          className="hud-action-pill-btn"
+          title="Take 4K 3D Studio Wallpaper Screenshot"
+        >
+          <Camera style={{ width: '15px', height: '15px', color: '#38bdf8' }} />
+          <span>Snapshot</span>
+        </button>
+
         {/* All-Hands Sprint Button */}
         <button
           onClick={handleToggleAllHands}
           className={`btn-all-hands ${isAllHands ? 'active-sprint' : ''}`}
           title={isAllHands ? 'Dismiss All-Hands & return to desks' : 'Gather all agents to Central Boardroom'}
         >
-          <Sparkles style={{ width: '16px', height: '16px' }} />
+          <Sparkles style={{ width: '15px', height: '15px' }} />
           <span>{isAllHands ? 'Exit Boardroom' : 'All-Hands Meeting'}</span>
         </button>
 
@@ -86,20 +129,20 @@ export default function TopHUD({
         <button
           onClick={() => setIsNightMode(!isNightMode)}
           className="hud-icon-btn"
-          title={isNightMode ? 'Switch to Day Mode' : 'Switch to Cyber Neon Night Mode'}
+          title={isNightMode ? 'Switch to Day Studio Mode' : 'Switch to Cyber Neon Night Mode'}
           aria-label="Toggle theme"
         >
-          {isNightMode ? <Sun style={{ width: '18px', height: '18px', color: '#f59e0b' }} /> : <Moon style={{ width: '18px', height: '18px', color: '#38bdf8' }} />}
+          {isNightMode ? <Sun style={{ width: '17px', height: '17px', color: '#f59e0b' }} /> : <Moon style={{ width: '17px', height: '17px', color: '#38bdf8' }} />}
         </button>
 
         {/* Sound Toggle */}
         <button
           onClick={handleToggleSound}
           className="hud-icon-btn"
-          title={isMuted ? 'Unmute Office Audio' : 'Mute Office Audio'}
+          title={isMuted ? 'Unmute Procedural Audio' : 'Mute Procedural Audio'}
           aria-label="Toggle sound"
         >
-          {isMuted ? <VolumeX style={{ width: '18px', height: '18px', color: 'var(--text-muted)' }} /> : <Volume2 style={{ width: '18px', height: '18px', color: '#10b981' }} />}
+          {isMuted ? <VolumeX style={{ width: '17px', height: '17px', color: 'var(--text-muted)' }} /> : <Volume2 style={{ width: '17px', height: '17px', color: '#10b981' }} />}
         </button>
       </div>
     </header>

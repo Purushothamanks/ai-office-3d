@@ -5,6 +5,7 @@ import OfficeControls from './components/OfficeControls';
 import AgentCardOverlay from './components/AgentCardOverlay';
 import RealtimeActivityFeed from './components/RealtimeActivityFeed';
 import AllHandsModal from './components/AllHandsModal';
+import OfficeRadar from './components/OfficeRadar';
 import { INITIAL_AGENTS, OFFICE_AREAS } from './data/agentsData';
 import { officeAudio } from './utils/officeAudio';
 
@@ -242,6 +243,13 @@ export default function App() {
       <AllHandsModal
         isAllHands={isAllHands}
         onClose={() => setIsAllHands(false)}
+      />
+
+      {/* Interactive Studio Radar (Bottom-Left) */}
+      <OfficeRadar
+        agents={agents}
+        selectedAgent={selectedAgent}
+        onSelectAgent={handleSelectAgent}
       />
 
       {/* Bottom Camera Navigation Presets */}

@@ -1,14 +1,60 @@
 import React, { useState, useEffect } from 'react';
-import { X, Send, Terminal, Cpu, CheckCircle2, Sparkles, Copy, Check, Activity } from 'lucide-react';
+import { X, Send, Terminal, Activity, Copy, Check, Sparkles, Play, Bot, Zap } from 'lucide-react';
 import { officeAudio } from '../utils/officeAudio';
 import confetti from 'canvas-confetti';
 
 export default function AgentCardOverlay({ agent, onClose, onUpdateAgentTask }) {
   const [promptText, setPromptText] = useState('');
   const [copied, setCopied] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [terminalStream, setTerminalStream] = useState([]);
 
   if (!agent) return null;
+
+  // Preset Action Chips tailored to each specific AI Engine
+  const actionPresets = {
+    gemini: [
+      'Execute sandboxed AST tool call',
+      'Optimize multi-step execution loop',
+      'Evaluate browser DOM multimodal frame'
+    ],
+    claude: [
+      'Refactor state machine with Object.freeze',
+      'Audit async promises for defensive safety',
+      'Verify zero memory leak event handlers'
+    ],
+    deepseek: [
+      'Formally prove induction lemma 3',
+      'Test edge-case boundary conditions at infinity',
+      'Synthesize Lean theorem proof tree'
+    ],
+    ollama: [
+      'Benchmark INT4 kernel inference latency',
+      'Load quantized weights to unified VRAM',
+      'Serve air-gapped local embedding stream'
+    ],
+    vision: [
+      'Segment 4K browser frame bounding boxes',
+      'Extract OCR text with 99.9% confidence',
+      'Audit 60-30-10 color palette harmony'
+    ],
+    diffusion: [
+      'Compile PBR frosted glass shader',
+      'Generate procedural SVG vector icons',
+      'Render 3D Fresnel refraction on table'
+    ],
+    sentinel: [
+      'Scan all 8 Firebase live fleet sites',
+      'Rotate ephemeral AES-GCM 256-bit keys',
+      'Verify MutationObserver anti-tamper guard'
+    ]
+  };
+
+  const chips = actionPresets[agent.id] || [
+    'Run benchmark audit',
+    'Compile production bundle',
+    'Verify test suites'
+  ];
 
   const handleCopyCode = () => {
     if (agent.codeSnippets?.[0]) {
@@ -18,25 +64,45 @@ export default function AgentCardOverlay({ agent, onClose, onUpdateAgentTask }) 
     }
   };
 
-  const handleSubmitTask = (e) => {
+  // Real-time character-by-character streaming execution simulator
+  const executeMissionStream = (missionTitle) => {
+    setIsStreaming(true);
+    officeAudio.playTyping();
+    setTerminalStream([`> [${agent.handle}] Initializing mission: "${missionTitle}"`]);
+
+    const steps = [
+      `[STEP 1/4] Binding neural context window to ${agent.systemName}...`,
+      `[STEP 2/4] Executing active buffer: ${agent.currentFile}...`,
+      `[STEP 3/4] Running AST invariant verification & performance check...`,
+      `[STEP 4/4] 100% verified. Output converged with 0 errors.`
+    ];
+
+    steps.forEach((step, idx) => {
+      setTimeout(() => {
+        setTerminalStream((prev) => [...prev, step]);
+        officeAudio.playTyping();
+
+        if (idx === steps.length - 1) {
+          setIsStreaming(false);
+          officeAudio.playDing();
+          onUpdateAgentTask(agent.id, missionTitle);
+          try {
+            confetti({
+              particleCount: 40,
+              spread: 60,
+              origin: { x: 0.8, y: 0.5 }
+            });
+          } catch (e) {}
+        }
+      }, (idx + 1) * 450);
+    });
+  };
+
+  const handleSubmitCustomPrompt = (e) => {
     e.preventDefault();
-    if (!promptText.trim()) return;
-
-    setIsSubmitting(true);
-    officeAudio.playDing();
-
-    setTimeout(() => {
-      onUpdateAgentTask(agent.id, promptText.trim());
-      setPromptText('');
-      setIsSubmitting(false);
-      try {
-        confetti({
-          particleCount: 40,
-          spread: 60,
-          origin: { x: 0.8, y: 0.5 }
-        });
-      } catch (err) {}
-    }, 400);
+    if (!promptText.trim() || isStreaming) return;
+    executeMissionStream(promptText.trim());
+    setPromptText('');
   };
 
   return (
@@ -60,8 +126,9 @@ export default function AgentCardOverlay({ agent, onClose, onUpdateAgentTask }) 
               <span className="agent-dept-tag">{agent.department}</span>
             </div>
             {agent.systemName && (
-              <div style={{ fontSize: '0.7rem', color: agent.color, fontWeight: '700', marginTop: '3px' }}>
-                ⚡ Powered by {agent.systemName}
+              <div style={{ fontSize: '0.72rem', color: agent.color, fontWeight: '700', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Zap style={{ width: '12px', height: '12px' }} />
+                <span>{agent.systemName}</span>
               </div>
             )}
           </div>
@@ -72,7 +139,7 @@ export default function AgentCardOverlay({ agent, onClose, onUpdateAgentTask }) 
       </div>
 
       <div className="agent-overlay-body">
-        {/* Role & Status */}
+        {/* Active Mission & Progress */}
         <div className="agent-status-card">
           <div className="agent-status-title-row">
             <span className="status-indicator-dot" style={{ backgroundColor: agent.color }} />
@@ -80,7 +147,6 @@ export default function AgentCardOverlay({ agent, onClose, onUpdateAgentTask }) 
           </div>
           <p className="agent-current-task">{agent.currentStatus}</p>
 
-          {/* Progress Bar */}
           <div className="progress-container">
             <div className="progress-bar-track">
               <div
@@ -99,7 +165,45 @@ export default function AgentCardOverlay({ agent, onClose, onUpdateAgentTask }) 
           </div>
         </div>
 
-        {/* Live Thoughts Stream */}
+        {/* Quick Action Chips (Instant Developer Actions) */}
+        <div className="agent-chips-section">
+          <div className="section-title-row">
+            <Sparkles style={{ width: '14px', height: '14px', color: agent.color }} />
+            <span>Instant Mission Directives</span>
+          </div>
+          <div className="action-chips-container">
+            {chips.map((chip, idx) => (
+              <button
+                key={idx}
+                disabled={isStreaming}
+                onClick={() => executeMissionStream(chip)}
+                className="action-chip-btn"
+                style={{ '--chip-accent': agent.color }}
+              >
+                <Play style={{ width: '11px', height: '11px' }} />
+                <span>{chip}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Live Streaming Terminal Buffer */}
+        {terminalStream.length > 0 && (
+          <div className="agent-section-card">
+            <div className="section-title-row">
+              <Terminal style={{ width: '14px', height: '14px', color: '#10b981' }} />
+              <span>Live Terminal Stream</span>
+              {isStreaming && <span className="streaming-spinner" />}
+            </div>
+            <div className="terminal-stream-window">
+              {terminalStream.map((log, i) => (
+                <div key={i} className="terminal-line">{log}</div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Inner Cognitive Stream */}
         <div className="agent-section-card">
           <div className="section-title-row">
             <Activity style={{ width: '14px', height: '14px', color: agent.color }} />
@@ -115,11 +219,11 @@ export default function AgentCardOverlay({ agent, onClose, onUpdateAgentTask }) 
           </div>
         </div>
 
-        {/* Live Work Output / Code Window */}
+        {/* Code Snippet Window */}
         <div className="agent-section-card">
           <div className="section-title-row">
             <Terminal style={{ width: '14px', height: '14px', color: agent.color }} />
-            <span>Active Buffer: {agent.currentFile}</span>
+            <span>Source: {agent.currentFile}</span>
             <button
               onClick={handleCopyCode}
               className="btn-copy-code"
@@ -144,25 +248,27 @@ export default function AgentCardOverlay({ agent, onClose, onUpdateAgentTask }) 
           ))}
         </div>
 
-        {/* Interactive Mission Dispatch Form */}
-        <form onSubmit={handleSubmitTask} className="agent-prompt-form">
+        {/* Custom Prompt Input */}
+        <form onSubmit={handleSubmitCustomPrompt} className="agent-prompt-form">
           <label className="prompt-form-label">
-            <Sparkles style={{ width: '14px', height: '14px', color: 'var(--accent-primary)' }} />
-            <span>Dispatch New Mission to {agent.name.split(' ')[0]}</span>
+            <Bot style={{ width: '14px', height: '14px', color: agent.color }} />
+            <span>Prompt {agent.name.split(' ')[0]} Directly</span>
           </label>
           <div className="prompt-input-row">
             <input
               type="text"
               value={promptText}
               onChange={(e) => setPromptText(e.target.value)}
-              placeholder="e.g. Optimize latency, draft shader, or synthesize paper..."
+              disabled={isStreaming}
+              placeholder={`Instruct ${agent.name.split(' ')[0]}...`}
               className="prompt-text-input"
             />
             <button
               type="submit"
-              disabled={isSubmitting || !promptText.trim()}
+              disabled={isStreaming || !promptText.trim()}
               className="btn-dispatch-prompt"
               style={{ backgroundColor: agent.color }}
+              title="Dispatch Mission"
             >
               <Send style={{ width: '15px', height: '15px' }} />
             </button>
