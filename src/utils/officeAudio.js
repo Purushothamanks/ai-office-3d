@@ -1,15 +1,14 @@
 /**
  * Pure Web Audio API Sound Synthesizer for AI Office 3D
  * Generates ambient office hum, mechanical keyboard typing,
- * celebratory dings, and conference chimes with zero external audio files.
+ * celebratory dings, conference chimes, and walking footsteps.
  */
 
 class OfficeAudioEngine {
   constructor() {
     this.ctx = null;
     this.isMuted = true; // Default muted for clean UX
-    this.ambientGain = null;
-    this.ambientOsc = null;
+    this.lastFootstepTime = 0;
   }
 
   init() {
@@ -19,9 +18,7 @@ class OfficeAudioEngine {
       if (AudioCtx) {
         this.ctx = new AudioCtx();
       }
-    } catch (e) {
-      // Audio context may not be supported
-    }
+    } catch (e) {}
   }
 
   resume() {
@@ -40,6 +37,36 @@ class OfficeAudioEngine {
     return !this.isMuted;
   }
 
+  // Soft procedural walking footstep sound on hardwood/carpet
+  playFootstep() {
+    if (this.isMuted || !this.ctx) return;
+    const now = performance.now();
+    if (now - this.lastFootstepTime < 280) return; // Prevent footstep spam
+    this.lastFootstepTime = now;
+
+    this.resume();
+    try {
+      const t = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      // Warm, muted low thud
+      const pitch = 70 + Math.random() * 30;
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(pitch, t);
+      osc.frequency.exponentialRampToValueAtTime(30, t + 0.08);
+
+      gain.gain.setValueAtTime(0.05, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(t);
+      osc.stop(t + 0.09);
+    } catch (e) {}
+  }
+
   // Keyboard typing mechanical click sound
   playTyping() {
     if (this.isMuted || !this.ctx) return;
@@ -49,7 +76,6 @@ class OfficeAudioEngine {
       const gain = this.ctx.createGain();
       const now = this.ctx.currentTime;
 
-      // Randomize pitch slightly for natural typing sensation
       const pitch = 300 + Math.random() * 400;
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(pitch, now);
@@ -95,7 +121,7 @@ class OfficeAudioEngine {
     if (this.isMuted || !this.ctx) return;
     this.resume();
     try {
-      const notes = [523.25, 659.25, 783.99, 1046.50]; // C Major arpeggio
+      const notes = [523.25, 659.25, 783.99, 1046.50];
       notes.forEach((freq, idx) => {
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();

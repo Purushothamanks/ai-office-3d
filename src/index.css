@@ -1172,3 +1172,241 @@ html, body {
     display: none;
   }
 }
+
+/* ==========================================================================
+   FIRST-PERSON WALK NAVIGATION CONTROLS & PROXIMITY CARD
+   ========================================================================== */
+
+.nav-mode-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-mode-toggle-btn.mode-walk {
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid #10b981;
+  color: #10b981;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.3);
+}
+
+.nav-mode-toggle-btn.mode-orbit {
+  background: rgba(56, 189, 248, 0.18);
+  border: 1px solid #38bdf8;
+  color: #38bdf8;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.3);
+}
+
+.nav-mode-toggle-btn:hover {
+  transform: translateY(-1px);
+}
+
+.walk-guide-bar {
+  position: absolute;
+  bottom: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-surface);
+  backdrop-filter: var(--blur-glass);
+  -webkit-backdrop-filter: var(--blur-glass);
+  border: 1px solid var(--border-glow);
+  border-radius: var(--radius-pill);
+  padding: 8px 18px;
+  box-shadow: var(--shadow-hud);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  animation: fadeIn 0.3s ease;
+  pointer-events: none;
+}
+
+.walk-guide-icon-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #10b981;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.walk-guide-keys {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.key-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.key-badge.highlight {
+  background: var(--accent-primary);
+  border-color: #60a5fa;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.7);
+  width: 26px;
+  height: 26px;
+  font-size: 0.8rem;
+}
+
+.walk-guide-text {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+/* Proximity Interaction Prompt Card */
+.proximity-interaction-card {
+  position: absolute;
+  bottom: 130px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: var(--blur-glass);
+  -webkit-backdrop-filter: var(--blur-glass);
+  border: 2px solid var(--accent-primary);
+  border-radius: var(--radius-card);
+  padding: 12px 20px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(59, 130, 246, 0.4);
+  z-index: 105;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  animation: pulseCard 2s infinite ease-in-out, slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.15s ease;
+}
+
+.proximity-interaction-card:hover {
+  transform: translateX(-50%) scale(1.03);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.8), 0 0 35px rgba(59, 130, 246, 0.6);
+}
+
+@keyframes pulseCard {
+  0%, 100% { border-color: var(--accent-primary); }
+  50% { border-color: #38bdf8; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translate(-50%, 15px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.proximity-avatar-dot {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+}
+
+.proximity-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.proximity-prompt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.proximity-agent-name {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.proximity-subtext {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+/* Mobile Virtual D-Pad */
+.mobile-dpad-container {
+  display: none;
+  position: absolute;
+  bottom: 84px;
+  left: 20px;
+  width: 120px;
+  height: 120px;
+  z-index: 100;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.dpad-middle-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.dpad-center {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dpad-btn {
+  width: 36px;
+  height: 36px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.dpad-btn:active {
+  background: var(--accent-primary);
+  transform: scale(0.92);
+}
+
+@media (max-width: 768px) {
+  .mobile-dpad-container {
+    display: flex;
+  }
+
+  .walk-guide-bar {
+    bottom: 14px;
+    padding: 6px 14px;
+  }
+
+  .walk-guide-keys {
+    display: none;
+  }
+}

@@ -134,24 +134,20 @@ export function createThoughtBillboard(text, accentColor) {
   function updateText(newText) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Pill background
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
     ctx.beginPath();
     ctx.roundRect(10, 10, canvas.width - 20, canvas.height - 20, 24);
     ctx.fill();
 
-    // Border glow
     ctx.strokeStyle = accentColor;
     ctx.lineWidth = 3;
     ctx.stroke();
 
-    // Accent indicator dot
     ctx.fillStyle = accentColor;
     ctx.beginPath();
     ctx.arc(36, 48, 8, 0, Math.PI * 2);
     ctx.fill();
 
-    // Status text
     ctx.fillStyle = '#f8fafc';
     ctx.font = 'bold 20px "Plus Jakarta Sans", sans-serif';
     const truncated = newText.length > 28 ? newText.substring(0, 26) + '...' : newText;
@@ -273,7 +269,7 @@ export function createStylizedAvatar(agent) {
 }
 
 /**
- * Builds Workstation Desk Setup with curved dual monitors, keyboard, chair, and mug with steam
+ * Builds Workstation Desk Setup with curved dual monitors, keyboard, chair, and mug
  */
 export function createWorkstation(agent, screenData) {
   const group = new THREE.Group();
@@ -351,11 +347,20 @@ export function createWorkstation(agent, screenData) {
 }
 
 /**
- * Builds Central Boardroom with Oval Glass Table, Holographic Core & Sticky Whiteboard
+ * Builds Central Boardroom with Oval Glass Table & Whiteboard
  */
 export function createBoardroom() {
   const group = new THREE.Group();
 
+  // Plush Boardroom Circular Rug on floor
+  const rugGeo = new THREE.CircleGeometry(3.2, 32);
+  const rugMat = new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.8 });
+  const rug = new THREE.Mesh(rugGeo, rugMat);
+  rug.rotation.x = -Math.PI / 2;
+  rug.position.y = 0.01;
+  group.add(rug);
+
+  // Oval Glass Table
   const tableTopGeo = new THREE.CylinderGeometry(1.8, 1.8, 0.08, 32);
   tableTopGeo.scale(1.5, 1, 0.95);
   const tableGlassMat = new THREE.MeshPhysicalMaterial({
@@ -385,14 +390,13 @@ export function createBoardroom() {
   holoCore.name = 'holoCore';
   group.add(holoCore);
 
-  // Large Whiteboard with architectural sticky notes
+  // Large Whiteboard
   const boardGeo = new THREE.BoxGeometry(4.2, 2.0, 0.08);
   const boardMat = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.2 });
   const whiteboard = new THREE.Mesh(boardGeo, boardMat);
   whiteboard.position.set(0, 2.3, -9.2);
   group.add(whiteboard);
 
-  // Colored Sticky Notes on Whiteboard
   const noteColors = ['#fde047', '#38bdf8', '#f472b6', '#4ade80'];
   for (let row = 0; row < 2; row++) {
     for (let col = 0; col < 4; col++) {
@@ -416,20 +420,20 @@ export function createBoardroom() {
 /**
  * Creates Ambient Cyber Dust Particle Motes
  */
-export function createAmbientMotes(count = 120) {
+export function createAmbientMotes(count = 140) {
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
 
   for (let i = 0; i < count; i++) {
     positions[i * 3] = (Math.random() - 0.5) * 22;
-    positions[i * 3 + 1] = Math.random() * 5 + 0.5;
+    positions[i * 3 + 1] = Math.random() * 4.0 + 0.4;
     positions[i * 3 + 2] = (Math.random() - 0.5) * 22;
   }
 
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   const material = new THREE.PointsMaterial({
     color: '#38bdf8',
-    size: 0.08,
+    size: 0.07,
     transparent: true,
     opacity: 0.65,
     blending: THREE.AdditiveBlending
@@ -455,7 +459,7 @@ export function createDataBeams(agents) {
       new THREE.Vector3(...agent.deskPos),
       new THREE.Vector3(0, 1.2, 0)
     ];
-    points[0].y = 0.8; // Desk surface
+    points[0].y = 0.8;
     const geo = new THREE.BufferGeometry().setFromPoints(points);
     const line = new THREE.Line(geo, lineMat);
     group.add(line);
@@ -466,37 +470,176 @@ export function createDataBeams(agents) {
 }
 
 /**
- * Builds Architectural Office Floor, Lounge & Corner Amenities
+ * Builds Full Architectural Room: Walls, Panoramic Skyline Window, Ceiling & Lounge
  */
 export function createOfficeEnvironment() {
   const group = new THREE.Group();
 
-  // Studio Floor Tiles
-  const floorGeo = new THREE.PlaneGeometry(24, 24);
-  const floorMat = new THREE.MeshStandardMaterial({ color: '#0a0f1d', roughness: 0.45, metalness: 0.35 });
+  const ROOM_W = 24;
+  const ROOM_L = 24;
+  const ROOM_H = 4.4;
+
+  // 1. Studio Hardwood / Parquet Floor
+  const floorGeo = new THREE.PlaneGeometry(ROOM_W, ROOM_L);
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: '#0b1120',
+    roughness: 0.35,
+    metalness: 0.25
+  });
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   group.add(floor);
 
-  const grid = new THREE.GridHelper(24, 24, '#2563eb', '#1e293b');
+  const grid = new THREE.GridHelper(ROOM_W, 24, '#1e293b', '#0f172a');
   grid.position.y = 0.005;
   group.add(grid);
 
-  // Frosted Glass Boundaries
-  const railMat = new THREE.MeshPhysicalMaterial({ color: '#60a5fa', transparent: true, opacity: 0.25, roughness: 0.2, transmission: 0.85 });
-  const railGeoX = new THREE.BoxGeometry(23.8, 0.6, 0.08);
-  const railNorth = new THREE.Mesh(railGeoX, railMat); railNorth.position.set(0, 0.3, -11.9); group.add(railNorth);
-  const railSouth = new THREE.Mesh(railGeoX, railMat); railSouth.position.set(0, 0.3, 11.9); group.add(railSouth);
-  const railGeoZ = new THREE.BoxGeometry(0.08, 0.6, 23.8);
-  const railWest = new THREE.Mesh(railGeoZ, railMat); railWest.position.set(-11.9, 0.3, 0); group.add(railWest);
-  const railEast = new THREE.Mesh(railGeoZ, railMat); railEast.position.set(11.9, 0.3, 0); group.add(railEast);
+  // 2. High Ceiling with Recessed Linear LED Lighting Fixtures
+  const ceilingGeo = new THREE.PlaneGeometry(ROOM_W, ROOM_L);
+  const ceilingMat = new THREE.MeshStandardMaterial({
+    color: '#070b14',
+    roughness: 0.8
+  });
+  const ceiling = new THREE.Mesh(ceilingGeo, ceilingMat);
+  ceiling.rotation.x = Math.PI / 2;
+  ceiling.position.y = ROOM_H;
+  group.add(ceiling);
 
-  // Server Racks in DevOps Corner
+  // Linear Ceiling LED Light Tracks (Modern architectural strips)
+  const trackGeo = new THREE.BoxGeometry(0.12, 0.05, 18);
+  const trackMat = new THREE.MeshBasicMaterial({ color: '#f8fafc' });
+
+  [-5, 0, 5].forEach(xOffset => {
+    const track = new THREE.Mesh(trackGeo, trackMat);
+    track.position.set(xOffset, ROOM_H - 0.03, 0);
+    group.add(track);
+
+    // Subtle downlight from ceiling
+    const trackLight = new THREE.PointLight('#f8fafc', 0.6, 12);
+    trackLight.position.set(xOffset, ROOM_H - 0.2, 0);
+    group.add(trackLight);
+  });
+
+  // 3. Walls
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: '#0d1527',
+    roughness: 0.7,
+    metalness: 0.1
+  });
+
+  // West Wall (Solid with Acoustic Wood Slats & Posters)
+  const westWallGeo = new THREE.BoxGeometry(0.2, ROOM_H, ROOM_L);
+  const westWall = new THREE.Mesh(westWallGeo, wallMat);
+  westWall.position.set(-ROOM_W / 2, ROOM_H / 2, 0);
+  westWall.receiveShadow = true;
+  group.add(westWall);
+
+  // Wall Art / Tech Posters on West Wall
+  const posterGeo = new THREE.PlaneGeometry(2.4, 1.4);
+  const poster1Mat = new THREE.MeshBasicMaterial({ color: '#1e293b' });
+  const poster1 = new THREE.Mesh(posterGeo, poster1Mat);
+  poster1.position.set(-ROOM_W / 2 + 0.12, 2.4, -4);
+  poster1.rotation.y = Math.PI / 2;
+  group.add(poster1);
+
+  const poster2 = new THREE.Mesh(posterGeo, poster1Mat);
+  poster2.position.set(-ROOM_W / 2 + 0.12, 2.4, 4);
+  poster2.rotation.y = Math.PI / 2;
+  group.add(poster2);
+
+  // East Wall (Solid with Server Racks)
+  const eastWall = new THREE.Mesh(westWallGeo, wallMat);
+  eastWall.position.set(ROOM_W / 2, ROOM_H / 2, 0);
+  eastWall.receiveShadow = true;
+  group.add(eastWall);
+
+  // South Wall (Entrance with Glass Double Doors)
+  const southWallL = new THREE.Mesh(new THREE.BoxGeometry(8, ROOM_H, 0.2), wallMat);
+  southWallL.position.set(-7.5, ROOM_H / 2, ROOM_L / 2);
+  group.add(southWallL);
+
+  const southWallR = new THREE.Mesh(new THREE.BoxGeometry(8, ROOM_H, 0.2), wallMat);
+  southWallR.position.set(7.5, ROOM_H / 2, ROOM_L / 2);
+  group.add(southWallR);
+
+  // Glass Double Doors in the center of South Wall
+  const doorGeo = new THREE.BoxGeometry(3.6, 3.2, 0.08);
+  const doorMat = new THREE.MeshPhysicalMaterial({
+    color: '#38bdf8',
+    transparent: true,
+    opacity: 0.45,
+    transmission: 0.8,
+    roughness: 0.1
+  });
+  const doors = new THREE.Mesh(doorGeo, doorMat);
+  doors.position.set(0, 1.6, ROOM_L / 2);
+  group.add(doors);
+
+  // Glass Door Top Signage: "AI RESEARCH LAB"
+  const signGeo = new THREE.BoxGeometry(4.2, 0.6, 0.12);
+  const signMat = new THREE.MeshStandardMaterial({ color: '#0284c7', emissive: '#0284c7', emissiveIntensity: 0.4 });
+  const sign = new THREE.Mesh(signGeo, signMat);
+  sign.position.set(0, 3.6, ROOM_L / 2 - 0.05);
+  group.add(sign);
+
+  // 4. North Wall: Panoramic Floor-to-Ceiling Skyline Glass Window!
+  const windowFrameMat = new THREE.MeshStandardMaterial({ color: '#1e293b', metalness: 0.8 });
+  const glassMat = new THREE.MeshPhysicalMaterial({
+    color: '#60a5fa',
+    transparent: true,
+    opacity: 0.2,
+    transmission: 0.95,
+    roughness: 0.05
+  });
+
+  const windowGlass = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W - 0.4, ROOM_H - 0.4), glassMat);
+  windowGlass.position.set(0, ROOM_H / 2, -ROOM_L / 2 + 0.1);
+  group.add(windowGlass);
+
+  // Window mullions (vertical metal beams)
+  for (let x = -8; x <= 8; x += 4) {
+    const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.12, ROOM_H, 0.18), windowFrameMat);
+    mullion.position.set(x, ROOM_H / 2, -ROOM_L / 2 + 0.12);
+    group.add(mullion);
+  }
+
+  // 5. Procedural 3D Skyline Outside the Window!
+  const skylineGroup = new THREE.Group();
+  const towerMat = new THREE.MeshStandardMaterial({ color: '#070c18', roughness: 0.8 });
+  const towerWindowMat = new THREE.MeshBasicMaterial({ color: '#38bdf8' });
+
+  const towerPositions = [
+    [-18, 14, -28, 6, 28, 6],
+    [-10, 18, -32, 7, 36, 7],
+    [-2, 12, -26, 5, 24, 5],
+    [6, 20, -34, 8, 40, 8],
+    [14, 15, -30, 6, 30, 6],
+    [22, 11, -25, 5, 22, 5]
+  ];
+
+  towerPositions.forEach(([x, y, z, w, h, d]) => {
+    const towerGeo = new THREE.BoxGeometry(w, h, d);
+    const tower = new THREE.Mesh(towerGeo, towerMat);
+    tower.position.set(x, y, z);
+    skylineGroup.add(tower);
+
+    // Glowing window strips on skyscraper
+    for (let wy = 4; wy < h - 4; wy += 4) {
+      const winGeo = new THREE.BoxGeometry(w * 0.85, 0.4, d + 0.1);
+      const winStrip = new THREE.Mesh(winGeo, towerWindowMat);
+      winStrip.position.set(x, wy, z);
+      skylineGroup.add(winStrip);
+    }
+  });
+
+  group.add(skylineGroup);
+
+  // 6. Server Racks in East Corner
   const rackGeo = new THREE.BoxGeometry(0.9, 2.4, 0.7);
   const rackMat = new THREE.MeshStandardMaterial({ color: '#090d16', metalness: 0.8, roughness: 0.2 });
-  const serverRack1 = new THREE.Mesh(rackGeo, rackMat); serverRack1.position.set(9.5, 1.2, 9.5); serverRack1.castShadow = true; group.add(serverRack1);
-  const serverRack2 = new THREE.Mesh(rackGeo, rackMat); serverRack2.position.set(10.5, 1.2, 9.5); serverRack2.castShadow = true; group.add(serverRack2);
+  const serverRack1 = new THREE.Mesh(rackGeo, rackMat); serverRack1.position.set(10.5, 1.2, 9.5); serverRack1.castShadow = true; group.add(serverRack1);
+  const serverRack2 = new THREE.Mesh(rackGeo, rackMat); serverRack2.position.set(10.5, 1.2, 8.2); serverRack2.castShadow = true; group.add(serverRack2);
 
   const lightsGroup = new THREE.Group();
   for (let row = 0; row < 8; row++) {
@@ -504,28 +647,13 @@ export function createOfficeEnvironment() {
       const ledGeo = new THREE.BoxGeometry(0.05, 0.03, 0.02);
       const ledMat = new THREE.MeshBasicMaterial({ color: (row + col) % 3 === 0 ? '#10b981' : '#38bdf8' });
       const led = new THREE.Mesh(ledGeo, ledMat);
-      led.position.set(9.3 + col * 0.18, 0.35 + row * 0.26, 9.16);
+      led.position.set(10.0, 0.35 + row * 0.26, 8.0 + col * 0.2);
       lightsGroup.add(led);
     }
   }
   group.add(lightsGroup);
 
-  // Retro Cyber Arcade Cabinet in Breakroom Corner
-  const arcadeGeo = new THREE.BoxGeometry(1.0, 2.2, 0.8);
-  const arcadeMat = new THREE.MeshStandardMaterial({ color: '#312e81', metalness: 0.6, roughness: 0.3 });
-  const arcade = new THREE.Mesh(arcadeGeo, arcadeMat);
-  arcade.position.set(-9.8, 1.1, 9.8);
-  arcade.rotation.y = Math.PI / 4;
-  group.add(arcade);
-
-  const arcadeScreenGeo = new THREE.PlaneGeometry(0.65, 0.5);
-  const arcadeScreenMat = new THREE.MeshBasicMaterial({ color: '#ec4899' });
-  const arcadeScreen = new THREE.Mesh(arcadeScreenGeo, arcadeScreenMat);
-  arcadeScreen.position.set(-9.5, 1.35, 9.5);
-  arcadeScreen.rotation.y = Math.PI / 4;
-  group.add(arcadeScreen);
-
-  // Espresso Coffee Bar Counter in Lounge Corner
+  // 7. Breakroom Amenities: Espresso Bar, Water Cooler & Arcade
   const barCounterGeo = new THREE.BoxGeometry(2.4, 0.9, 0.8);
   const barCounterMat = new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.4 });
   const barCounter = new THREE.Mesh(barCounterGeo, barCounterMat);
@@ -537,6 +665,37 @@ export function createOfficeEnvironment() {
   const coffeeMachine = new THREE.Mesh(coffeeMachineGeo, coffeeMachineMat);
   coffeeMachine.position.set(-9.8, 1.12, -9.8);
   group.add(coffeeMachine);
+
+  // Water Cooler Dispenser
+  const coolerBaseGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.9, 16);
+  const coolerBase = new THREE.Mesh(coolerBaseGeo, new THREE.MeshStandardMaterial({ color: '#e2e8f0' }));
+  coolerBase.position.set(-8.0, 0.45, -10.5);
+  group.add(coolerBase);
+
+  const waterBottleGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.5, 16);
+  const waterBottle = new THREE.Mesh(waterBottleGeo, new THREE.MeshPhysicalMaterial({
+    color: '#38bdf8',
+    transparent: true,
+    opacity: 0.75,
+    transmission: 0.9
+  }));
+  waterBottle.position.set(-8.0, 1.15, -10.5);
+  group.add(waterBottle);
+
+  // Retro Cyber Arcade Cabinet in Breakroom Corner
+  const arcadeGeo = new THREE.BoxGeometry(1.0, 2.2, 0.8);
+  const arcadeMat = new THREE.MeshStandardMaterial({ color: '#312e81', metalness: 0.6, roughness: 0.3 });
+  const arcade = new THREE.Mesh(arcadeGeo, arcadeMat);
+  arcade.position.set(-10.0, 1.1, 9.8);
+  arcade.rotation.y = Math.PI / 4;
+  group.add(arcade);
+
+  const arcadeScreenGeo = new THREE.PlaneGeometry(0.65, 0.5);
+  const arcadeScreenMat = new THREE.MeshBasicMaterial({ color: '#ec4899' });
+  const arcadeScreen = new THREE.Mesh(arcadeScreenGeo, arcadeScreenMat);
+  arcadeScreen.position.set(-9.7, 1.35, 9.5);
+  arcadeScreen.rotation.y = Math.PI / 4;
+  group.add(arcadeScreen);
 
   // Stylized Potted Plants
   const createPlant = (x, z) => {
@@ -561,9 +720,9 @@ export function createOfficeEnvironment() {
     return plantGroup;
   };
 
-  group.add(createPlant(-8.0, -10.5));
+  group.add(createPlant(-6.5, -10.5));
   group.add(createPlant(10.5, -10.5));
-  group.add(createPlant(-10.5, 7.5));
+  group.add(createPlant(-10.5, 6.5));
 
   return { group, serverLights: lightsGroup };
 }

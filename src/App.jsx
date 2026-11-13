@@ -6,19 +6,25 @@ import AgentCardOverlay from './components/AgentCardOverlay';
 import RealtimeActivityFeed from './components/RealtimeActivityFeed';
 import AllHandsModal from './components/AllHandsModal';
 import OfficeRadar from './components/OfficeRadar';
+import WalkControlsOverlay from './components/WalkControlsOverlay';
 import { INITIAL_AGENTS, OFFICE_AREAS } from './data/agentsData';
 import { officeAudio } from './utils/officeAudio';
 
 export default function App() {
   const [agents, setAgents] = useState(INITIAL_AGENTS);
   const [selectedAgent, setSelectedAgent] = useState(null);
-  const [currentArea, setCurrentArea] = useState(null); // Default null so camera stays where user puts it
+  const [currentArea, setCurrentArea] = useState(null);
   const [isAllHands, setIsAllHands] = useState(false);
   const [isNightMode, setIsNightMode] = useState(true);
   const [isMuted, setIsMuted] = useState(true);
   const [simulationSpeed, setSimulationSpeed] = useState(1);
 
-  // Live Activity Stream initialized with real AI systems on this system
+  // First-Person Walk Navigation Engine States
+  const [navigationMode, setNavigationMode] = useState('walk'); // 'walk' (First-Person WASD) or 'orbit' (Drone Camera)
+  const [nearbyAgent, setNearbyAgent] = useState(null);
+  const [walkDirectionInput, setWalkDirectionInput] = useState(null);
+
+  // Live Activity Stream
   const [activities, setActivities] = useState([
     {
       id: 1,
@@ -78,12 +84,11 @@ export default function App() {
     }
   ]);
 
-  // Real-time Concurrent Autonomous Simulation Loop for ALL 7 AI Agents
+  // Real-time Concurrent Autonomous Simulation Loop
   useEffect(() => {
     const intervalTime = Math.max(700, 2400 / simulationSpeed);
 
     const timer = setInterval(() => {
-      // Pick 1-2 random agents to advance work concurrently
       const activeIdx = Math.floor(Math.random() * INITIAL_AGENTS.length);
 
       setAgents((prevAgents) => {
@@ -159,7 +164,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, [simulationSpeed]);
 
-  // Handle User Dispatching Custom Mission to an Agent
   const handleUpdateAgentTask = useCallback((agentId, newMission) => {
     setAgents((prev) =>
       prev.map((a) => {
@@ -209,13 +213,14 @@ export default function App() {
   };
 
   const handleSelectArea = (area) => {
+    setNavigationMode('orbit'); // Switch to orbit mode when clicking camera presets
     setSelectedAgent(null);
     setCurrentArea(area);
   };
 
   return (
     <div className={`office-app-container ${isNightMode ? 'theme-night' : 'theme-day'}`}>
-      {/* 3D WebGL Canvas Viewport with Rock-Solid OrbitControls (Zero Auto-Drift) */}
+      {/* 3D WebGL Canvas Viewport with First-Person Walk Navigation Engine */}
       <Office3DCanvas
         agents={agents}
         selectedAgent={selectedAgent}
@@ -224,6 +229,9 @@ export default function App() {
         currentArea={currentArea}
         isNightMode={isNightMode}
         simulationSpeed={simulationSpeed}
+        navigationMode={navigationMode}
+        onNearAgent={setNearbyAgent}
+        walkDirectionInput={walkDirectionInput}
       />
 
       {/* Top HUD Bar */}
@@ -237,6 +245,16 @@ export default function App() {
         setIsMuted={setIsMuted}
         simulationSpeed={simulationSpeed}
         setSimulationSpeed={setSimulationSpeed}
+        navigationMode={navigationMode}
+        setNavigationMode={setNavigationMode}
+      />
+
+      {/* Walking Style Controls Overlay & Proximity Card */}
+      <WalkControlsOverlay
+        navigationMode={navigationMode}
+        nearbyAgent={nearbyAgent}
+        onInteractAgent={handleSelectAgent}
+        setWalkDirectionInput={setWalkDirectionInput}
       />
 
       {/* All-Hands Meeting Top Banner */}

@@ -19,7 +19,10 @@ export default function Office3DCanvas({
   isAllHands,
   currentArea,
   isNightMode,
-  simulationSpeed = 1
+  simulationSpeed = 1,
+  navigationMode = 'walk', // 'walk' (First-Person WASD) or 'orbit' (Drone Camera)
+  onNearAgent,
+  walkDirectionInput = null // Touch/Mobile directional input from UI
 }) {
   const mountRef = useRef(null);
 
@@ -43,10 +46,37 @@ export default function Office3DCanvas({
     targetCamPos: new THREE.Vector3(13, 11, 13),
     targetLookAt: new THREE.Vector3(0, 0, 0),
     isAllHandsRef: false,
-    speedRef: 1
+    speedRef: 1,
+    // First-Person Walk Navigation Engine State
+    navModeRef: 'walk',
+    playerPos: new THREE.Vector3(0, 1.68, 8.5), // Entrance eye-level
+    yaw: Math.PI, // Facing forward toward boardroom/north window
+    pitch: -0.05,
+    keysPressed: { forward: false, backward: false, left: false, right: false },
+    isDraggingLook: false,
+    prevMouse: { x: 0, y: 0 },
+    walkStep: 0,
+    touchMoveInput: null
   });
 
-  // Expose clean snapshot capture helper globally
+  useEffect(() => {
+    refs.current.navModeRef = navigationMode;
+    const r = refs.current;
+    if (r.controls) {
+      r.controls.enabled = navigationMode === 'orbit';
+    }
+    if (navigationMode === 'walk' && r.camera) {
+      r.playerPos.set(0, 1.68, 8.5);
+      r.yaw = Math.PI;
+      r.pitch = -0.05;
+      r.transitioning = false;
+    }
+  }, [navigationMode]);
+
+  useEffect(() => {
+    refs.current.touchMoveInput = walkDirectionInput;
+  }, [walkDirectionInput]);
+
   useEffect(() => {
     window.__captureOffice3DSnapshot = () => {
       const r = refs.current;
@@ -74,11 +104,9 @@ export default function Office3DCanvas({
     refs.current.speedRef = simulationSpeed;
   }, [simulationSpeed]);
 
-  // Update In-World 3D Thought Billboards when agents status updates
   useEffect(() => {
     const r = refs.current;
     if (!r.agentsMap) return;
-
     agents.forEach(agent => {
       const avatar = r.agentsMap.get(agent.id);
       if (avatar && avatar.thoughtBillboard) {
@@ -101,7 +129,7 @@ export default function Office3DCanvas({
     } else {
       r.scene.background = new THREE.Color('#090d16');
       r.ambientLight.color.set('#94a3b8');
-      r.ambientLight.intensity = 1.2;
+      r.ambientLight.intensity = 1.25;
       r.dirLight.color.set('#f8fafc');
       r.dirLight.intensity = 1.9;
     }
@@ -110,17 +138,31 @@ export default function Office3DCanvas({
   // Camera presets / agent selection glide
   useEffect(() => {
     const r = refs.current;
-    if (!r.camera || !r.controls) return;
+    if (!r.camera) return;
 
     if (selectedAgent) {
-      r.targetLookAt.set(...selectedAgent.deskPos);
-      r.targetLookAt.y += 1.0;
-      r.targetCamPos.set(
-        selectedAgent.deskPos[0] + (selectedAgent.deskPos[0] > 0 ? -3.0 : 3.0),
-        selectedAgent.deskPos[1] + 2.5,
-        selectedAgent.deskPos[2] + 3.0
-      );
-      r.transitioning = true;
+      if (r.navModeRef === 'walk') {
+        // In walk mode, walk the player over to the agent desk
+        r.playerPos.set(
+          selectedAgent.deskPos[0] + (selectedAgent.deskPos[0] > 0 ? -1.8 : 1.8),
+          1.68,
+          selectedAgent.deskPos[2] + 1.2
+        );
+        // Look at the agent
+        const dx = selectedAgent.deskPos[0] - r.playerPos.x;
+        const dz = selectedAgent.deskPos[2] - r.playerPos.z;
+        r.yaw = Math.atan2(dx, dz);
+        r.pitch = -0.15;
+      } else {
+        r.targetLookAt.set(...selectedAgent.deskPos);
+        r.targetLookAt.y += 1.0;
+        r.targetCamPos.set(
+          selectedAgent.deskPos[0] + (selectedAgent.deskPos[0] > 0 ? -3.0 : 3.0),
+          selectedAgent.deskPos[1] + 2.5,
+          selectedAgent.deskPos[2] + 3.0
+        );
+        r.transitioning = true;
+      }
     } else if (currentArea) {
       r.targetCamPos.set(...currentArea.camPos);
       r.targetLookAt.set(...currentArea.target);
@@ -128,7 +170,7 @@ export default function Office3DCanvas({
     }
   }, [selectedAgent, currentArea]);
 
-  // Mount Three.js Scene ONCE
+  // Mount Scene & Keyboard Walk Event Listeners ONCE
   useEffect(() => {
     const container = mountRef.current;
     if (!container) return;
@@ -138,10 +180,10 @@ export default function Office3DCanvas({
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(isNightMode ? '#05070d' : '#090d16');
-    scene.fog = new THREE.FogExp2('#090d16', 0.018);
+    scene.fog = new THREE.FogExp2('#090d16', 0.015);
 
-    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 100);
-    camera.position.set(13, 11, 13);
+    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 120);
+    camera.position.set(0, 1.68, 8.5); // Start at office door entrance
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -162,14 +204,10 @@ export default function Office3DCanvas({
     controls.maxPolarAngle = Math.PI / 2.05;
     controls.minDistance = 2.5;
     controls.maxDistance = 38;
-    controls.target.set(0, 0, 0);
-
-    controls.addEventListener('start', () => {
-      refs.current.transitioning = false;
-    });
+    controls.enabled = false; // Disabled by default in walk mode
 
     // Lights
-    const ambientLight = new THREE.AmbientLight(isNightMode ? '#312e81' : '#94a3b8', isNightMode ? 0.65 : 1.2);
+    const ambientLight = new THREE.AmbientLight(isNightMode ? '#312e81' : '#94a3b8', isNightMode ? 0.65 : 1.25);
     scene.add(ambientLight);
 
     const dirLight = new THREE.DirectionalLight(isNightMode ? '#60a5fa' : '#f8fafc', isNightMode ? 1.0 : 1.9);
@@ -179,10 +217,6 @@ export default function Office3DCanvas({
     dirLight.shadow.mapSize.height = 2048;
     dirLight.shadow.camera.near = 0.5;
     dirLight.shadow.camera.far = 45;
-    dirLight.shadow.camera.left = -14;
-    dirLight.shadow.camera.right = 14;
-    dirLight.shadow.camera.top = 14;
-    dirLight.shadow.camera.bottom = -14;
     dirLight.shadow.bias = -0.0005;
     scene.add(dirLight);
 
@@ -194,7 +228,7 @@ export default function Office3DCanvas({
     pinkPoint.position.set(8, 5, 8);
     scene.add(pinkPoint);
 
-    // Office Architecture
+    // Build Full Room with Panoramic Skyline Window & Ceiling
     const { group: officeEnv, serverLights } = createOfficeEnvironment();
     scene.add(officeEnv);
 
@@ -206,7 +240,7 @@ export default function Office3DCanvas({
     const motesMesh = createAmbientMotes(140);
     scene.add(motesMesh);
 
-    // Data Beams to central boardroom
+    // Data Beams
     const dataBeamsGroup = createDataBeams(agents);
     scene.add(dataBeamsGroup);
 
@@ -260,19 +294,70 @@ export default function Office3DCanvas({
     r.ambientLight = ambientLight;
     r.clickableObjects = clickableObjects;
 
-    // Raycasting
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
+    // First-Person Walk Look & Mouse Move Listeners
+    const handlePointerDown = (e) => {
+      r.isDraggingLook = true;
+      r.prevMouse = { x: e.clientX, y: e.clientY };
+    };
 
     const handlePointerMove = (e) => {
-      const rect = container.getBoundingClientRect();
-      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(clickableObjects, true);
-      container.style.cursor = intersects.length > 0 ? 'pointer' : 'default';
+      if (r.navModeRef === 'walk' && r.isDraggingLook) {
+        const deltaX = e.clientX - r.prevMouse.x;
+        const deltaY = e.clientY - r.prevMouse.y;
+        r.yaw -= deltaX * 0.0035;
+        r.pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, r.pitch - deltaY * 0.0035));
+        r.prevMouse = { x: e.clientX, y: e.clientY };
+      }
     };
+
+    const handlePointerUp = () => {
+      r.isDraggingLook = false;
+    };
+
+    // Keyboard WASD Walking Listeners
+    const handleKeyDown = (e) => {
+      if (['input', 'textarea'].includes(document.activeElement?.tagName?.toLowerCase())) return;
+
+      if (e.code === 'KeyW' || e.code === 'ArrowUp') r.keysPressed.forward = true;
+      if (e.code === 'KeyS' || e.code === 'ArrowDown') r.keysPressed.backward = true;
+      if (e.code === 'KeyA' || e.code === 'ArrowLeft') r.keysPressed.left = true;
+      if (e.code === 'KeyD' || e.code === 'ArrowRight') r.keysPressed.right = true;
+
+      // Press 'E' to interact with closest agent when near
+      if (e.code === 'KeyE') {
+        const closest = findClosestAgent(r.playerPos);
+        if (closest && closest.distance < 2.6) {
+          onSelectAgent(closest.agent);
+          officeAudio.playDing();
+        }
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      if (e.code === 'KeyW' || e.code === 'ArrowUp') r.keysPressed.forward = false;
+      if (e.code === 'KeyS' || e.code === 'ArrowDown') r.keysPressed.backward = false;
+      if (e.code === 'KeyA' || e.code === 'ArrowLeft') r.keysPressed.left = false;
+      if (e.code === 'KeyD' || e.code === 'ArrowRight') r.keysPressed.right = false;
+    };
+
+    const findClosestAgent = (pos) => {
+      let closest = null;
+      let minDst = Infinity;
+      agents.forEach(agent => {
+        const dx = agent.deskPos[0] - pos.x;
+        const dz = agent.deskPos[2] - pos.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < minDst) {
+          minDst = dist;
+          closest = { agent, distance: dist };
+        }
+      });
+      return closest;
+    };
+
+    // Raycast Click Selection
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
 
     const handleClick = (e) => {
       const rect = container.getBoundingClientRect();
@@ -298,12 +383,17 @@ export default function Office3DCanvas({
       }
     };
 
-    container.addEventListener('pointermove', handlePointerMove);
+    container.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
     container.addEventListener('click', handleClick);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
 
-    // Animation Loop
+    // 60 FPS Walking & Animation Loop
     let lastTime = performance.now();
     let typingSoundTimer = 0;
+    let nearAgentCheckTimer = 0;
 
     const animate = () => {
       r.animFrameId = requestAnimationFrame(animate);
@@ -313,16 +403,64 @@ export default function Office3DCanvas({
       lastTime = now;
       r.time += delta;
 
-      if (r.transitioning) {
-        camera.position.lerp(r.targetCamPos, 0.06);
-        controls.target.lerp(r.targetLookAt, 0.06);
+      // FIRST-PERSON WALK NAVIGATION PHYSICS
+      if (r.navModeRef === 'walk') {
+        const moveSpeed = 4.8 * delta; // Realistic walking velocity
+        const forward = new THREE.Vector3(Math.sin(r.yaw), 0, Math.cos(r.yaw));
+        const right = new THREE.Vector3(Math.cos(r.yaw), 0, -Math.sin(r.yaw));
+        const moveVec = new THREE.Vector3();
 
-        if (camera.position.distanceTo(r.targetCamPos) < 0.08 && controls.target.distanceTo(r.targetLookAt) < 0.08) {
-          r.transitioning = false;
+        if (r.keysPressed.forward || r.touchMoveInput === 'forward') moveVec.add(forward);
+        if (r.keysPressed.backward || r.touchMoveInput === 'backward') moveVec.sub(forward);
+        if (r.keysPressed.left || r.touchMoveInput === 'left') moveVec.add(right);
+        if (r.keysPressed.right || r.touchMoveInput === 'right') moveVec.sub(right);
+
+        const isMoving = moveVec.lengthSq() > 0;
+        if (isMoving) {
+          moveVec.normalize().multiplyScalar(moveSpeed);
+          r.playerPos.add(moveVec);
+
+          // Room boundary collision clamping: stay inside room walls [-10.8, 10.8]
+          r.playerPos.x = Math.max(-10.8, Math.min(10.8, r.playerPos.x));
+          r.playerPos.z = Math.max(-10.8, Math.min(10.8, r.playerPos.z));
+
+          // Walking step & rhythmic footstep sounds
+          r.walkStep += delta * 12;
+          officeAudio.playFootstep();
         }
-      }
 
-      controls.update();
+        // Realistic walking head-bob
+        const headBob = isMoving ? Math.sin(r.walkStep) * 0.035 : 0;
+        camera.position.set(r.playerPos.x, r.playerPos.y + headBob, r.playerPos.z);
+
+        // Update Camera Look Direction from Yaw and Pitch
+        const lookTarget = new THREE.Vector3(
+          camera.position.x + Math.sin(r.yaw) * Math.cos(r.pitch),
+          camera.position.y + Math.sin(r.pitch),
+          camera.position.z + Math.cos(r.yaw) * Math.cos(r.pitch)
+        );
+        camera.lookAt(lookTarget);
+
+        // Check proximity to desks for [E] prompt banner
+        nearAgentCheckTimer += delta;
+        if (nearAgentCheckTimer > 0.15) {
+          nearAgentCheckTimer = 0;
+          const closest = findClosestAgent(r.playerPos);
+          if (onNearAgent) {
+            onNearAgent(closest && closest.distance < 2.6 ? closest.agent : null);
+          }
+        }
+      } else {
+        // DRONE ORBIT CAMERA MODE
+        if (r.transitioning) {
+          camera.position.lerp(r.targetCamPos, 0.06);
+          controls.target.lerp(r.targetLookAt, 0.06);
+          if (camera.position.distanceTo(r.targetCamPos) < 0.08 && controls.target.distanceTo(r.targetLookAt) < 0.08) {
+            r.transitioning = false;
+          }
+        }
+        controls.update();
+      }
 
       // Drift Ambient Particle Motes
       if (r.motesMesh) {
@@ -360,7 +498,7 @@ export default function Office3DCanvas({
         }
       }
 
-      // Procedural Agent Animations & Thought Billboard Face-Camera
+      // Procedural Agent Animations & Thought Billboards
       agentsMap.forEach((avatar) => {
         const dest = r.isAllHandsRef ? avatar.meetingPos : avatar.deskPos;
         avatar.currentPos.lerp(dest, 0.04);
@@ -370,7 +508,6 @@ export default function Office3DCanvas({
         avatar.gemMesh.rotation.y += delta * 2;
         avatar.gemMesh.position.y = 1.65 + Math.sin(r.time * 4 + avatar.agent.deskPos[2]) * 0.05;
 
-        // Billboards always face the camera
         if (avatar.thoughtBillboard) {
           avatar.thoughtBillboard.mesh.lookAt(camera.position);
           avatar.thoughtBillboard.mesh.position.y = 2.15 + Math.sin(r.time * 3 + avatar.agent.deskPos[0]) * 0.03;
@@ -407,8 +544,12 @@ export default function Office3DCanvas({
     return () => {
       cancelAnimationFrame(r.animFrameId);
       window.removeEventListener('resize', handleResize);
-      container.removeEventListener('pointermove', handlePointerMove);
+      container.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
       container.removeEventListener('click', handleClick);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
       controls.dispose();
       if (renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);

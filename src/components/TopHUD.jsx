@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sun, Moon, Volume2, VolumeX, Users, Camera, Sparkles, Activity, Cpu } from 'lucide-react';
+import { Sun, Moon, Volume2, VolumeX, Users, Camera, Sparkles, Activity, Footprints, Eye } from 'lucide-react';
 import { officeAudio } from '../utils/officeAudio';
 import confetti from 'canvas-confetti';
 
@@ -12,11 +12,12 @@ export default function TopHUD({
   isMuted,
   setIsMuted,
   simulationSpeed,
-  setSimulationSpeed
+  setSimulationSpeed,
+  navigationMode,
+  setNavigationMode
 }) {
   const [fps, setFps] = useState(60);
 
-  // Measure realistic client frame rate
   useEffect(() => {
     let frameCount = 0;
     let lastTime = performance.now();
@@ -85,12 +86,34 @@ export default function TopHUD({
               {fps} FPS
             </span>
           </div>
-          <p className="top-hud-subtitle">Autonomous Multimodal 3D Workplace Simulation</p>
+          <p className="top-hud-subtitle">Architectural Walking Studio & Realtime Multi-Agent Lab</p>
         </div>
       </div>
 
       {/* Action Controls Cluster */}
       <div className="top-hud-actions">
+        {/* Navigation Mode Switcher: Walk vs Drone Orbit */}
+        <button
+          onClick={() => {
+            setNavigationMode(navigationMode === 'walk' ? 'orbit' : 'walk');
+            officeAudio.playDing();
+          }}
+          className={`nav-mode-toggle-btn ${navigationMode === 'walk' ? 'mode-walk' : 'mode-orbit'}`}
+          title={navigationMode === 'walk' ? 'Switch to Drone Orbit Camera' : 'Switch to First-Person Walk Mode (WASD)'}
+        >
+          {navigationMode === 'walk' ? (
+            <>
+              <Footprints style={{ width: '15px', height: '15px', color: '#10b981' }} />
+              <span>Walk Mode (WASD)</span>
+            </>
+          ) : (
+            <>
+              <Eye style={{ width: '15px', height: '15px', color: '#38bdf8' }} />
+              <span>Drone Orbit</span>
+            </>
+          )}
+        </button>
+
         {/* 4K Studio Snapshot Button */}
         <button
           onClick={handleTakeSnapshot}
